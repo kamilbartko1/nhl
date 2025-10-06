@@ -1,0 +1,336 @@
+/* -------------------------------
+   RESET + FONTS
+----------------------------------*/
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: "Segoe UI", Roboto, Arial, sans-serif;
+}
+
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+
+/* 🌍 Globálny font a farby */
+body, select, input, button, table, th, td, h1, h2, h3, p, div, span {
+  font-family: "Poppins", "Segoe UI", sans-serif;
+  color: #eaf9ff;
+  letter-spacing: 0.3px;
+}
+
+body {
+  font-family: "Poppins", "Segoe UI", sans-serif;
+  background: radial-gradient(circle at top, #001f33 0%, #000814 100%);
+  color: #f2f6f8;
+  margin: 0;
+  padding: 0;
+  line-height: 1.6;
+  padding: 1rem;
+}
+
+/* -------------------------------
+   HLAVIČKA
+----------------------------------*/
+h1 {
+  text-align: center;
+  color: #00b7ff;
+  margin-bottom: 1.5rem;
+  text-shadow: 0 0 10px rgba(0,183,255,0.6);
+}
+
+header h1 {
+  text-align: center;
+  font-size: 2.8rem;
+  color: #ffffff;
+  font-weight: 800;
+  text-shadow: 0 0 10px rgba(0, 234, 255, 0.7),
+               0 0 20px rgba(0, 234, 255, 0.5),
+               0 0 30px rgba(0, 234, 255, 0.3);
+  letter-spacing: 1px;
+  margin-bottom: 0.8rem;
+  font-family: "Poppins", "Segoe UI", sans-serif;
+}
+
+#matches-section h2 {
+  text-align: center;
+  font-size: 1.8rem;
+  color: #00eaff;
+  text-shadow: 0 0 8px rgba(0, 183, 255, 0.6);
+  margin-top: 1rem;
+}
+
+/* -------------------------------
+   SEKCIE
+----------------------------------*/
+.section {
+  background: #161b22;
+  border-radius: 10px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.4);
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.section:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 0 15px rgba(0,183,255,0.3);
+}
+
+#mobileSelect {
+  display: block;
+  margin: 0 auto 1rem auto;
+  text-align: center;
+  font-size: 1.1rem;
+  color: #00eaff;
+  background: rgba(0, 183, 255, 0.1);
+  border: 1px solid rgba(0, 234, 255, 0.4);
+  border-radius: 8px;
+  padding: 0.6rem 1rem;
+  text-align-last: center; /* 🔹 toto centrovanie textu v <select> */
+  box-shadow: 0 0 8px rgba(0, 234, 255, 0.2);
+}
+
+#mobileSelect option {
+  text-align: center;
+}
+
+/* -------------------------------
+   TABUĽKY
+----------------------------------*/
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+  font-size: 0.95rem;
+}
+
+th, td {
+  padding: 0.6rem;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  text-align: left;
+}
+
+th {
+  background: #0f1419;
+  color: #00b7ff;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+tr:hover td {
+  background: rgba(0,183,255,0.05);
+  cursor: pointer;
+}
+
+/* zvýraznenie kôl */
+tr td[colspan="4"] b {
+  display: block;
+  background: linear-gradient(90deg, #00b7ff44, transparent);
+  padding: 0.4rem;
+  border-radius: 6px;
+  text-transform: uppercase;
+  color: #00b7ff;
+}
+
+/* -------------------------------
+   TLAČIDLÁ
+----------------------------------*/
+button {
+  background: #00b7ff;
+  color: #000;
+  border: none;
+  border-radius: 5px;
+  padding: 0.3rem 0.7rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.3s ease, transform 0.2s ease;
+}
+
+button:hover {
+  background: #00e0ff;
+  transform: scale(1.05);
+}
+
+/* -------------------------------
+   MANTINGAL SEKCIÁ
+----------------------------------*/
+#mantingal {
+  margin-top: 1rem;
+}
+
+#mantingal th {
+  background: #1b242f;
+  color: #00eaff;
+}
+
+#mantingal-summary-pc, 
+#mantingal-summary-mobile {
+  background: #10161d;
+  border: 1px solid rgba(0,183,255,0.3);
+  border-radius: 8px;
+  padding: 0.8rem;
+  margin-top: 1rem;
+}
+
+#mantingal-summary-pc p, 
+#mantingal-summary-mobile p {
+  margin: 0.3rem 0;
+}
+
+/* -------------------------------
+   DETAILY ZÁPASU
+----------------------------------*/
+.details-box {
+  background: #10161d;
+  border-left: 3px solid #00b7ff;
+  padding: 0.7rem;
+  border-radius: 5px;
+  font-size: 0.9rem;
+  color: #ddd;
+}
+
+/* -------------------------------
+   RESPONSIVE
+----------------------------------*/
+@media (max-width: 768px) {
+  body {
+    padding: 0.5rem;
+  }
+
+  table {
+    font-size: 0.85rem;
+  }
+
+  .section {
+    margin-bottom: 1rem;
+  }
+
+  h1 {
+    font-size: 1.3rem;
+  }
+}
+
+/* -------------------------------
+   NAVIGAČNÉ MENU POD NADPISOM
+----------------------------------*/
+
+#mobileSelect {
+  display: block;
+  margin: 0.8rem auto 1.5rem auto;   /* centrovanie */
+  padding: 0.7rem 1rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #00b7ff, #00eaff);
+  color: #0c1015;
+  border: none;
+  box-shadow: 0 0 10px rgba(0,183,255,0.4);
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  width: 240px;   /* šírka menu */
+}
+
+#mobileSelect:hover {
+  background: linear-gradient(135deg, #00eaff, #00b7ff);
+  transform: scale(1.05);
+  box-shadow: 0 0 15px rgba(0,183,255,0.6);
+}
+
+#mobileSelect:focus {
+  outline: 2px solid #00eaff;
+  outline-offset: 3px;
+}
+
+/* Nadpis kola v tabuľke zápasov */
+#matches tbody tr td[colspan="4"] {
+  text-align: center;
+  background: linear-gradient(90deg, rgba(0,183,255,0.15), rgba(0,234,255,0.15));
+  color: #00eaff;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 0.6rem 0;
+  border-radius: 6px;
+}
+
+/* Vycentrovanie nadpisu kola (napr. 9. kolo (2025-10-05)) */
+#matches tbody tr td[colspan="4"] {
+  text-align: center !important;
+  background: linear-gradient(90deg, rgba(0,183,255,0.15), rgba(0,234,255,0.15));
+  color: #00eaff;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 0.6rem 0;
+  border-radius: 6px;
+}
+
+/* Vycentrovanie rating timov a rating hracov */
+#teamRatings-section h2,
+#playerRatings-section h2 {
+  text-align: center;
+  font-size: 1.8rem;
+  color: #00eaff;
+  text-shadow: 0 0 8px rgba(0, 234, 255, 0.6);
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+}
+
+/* Rolovacie menu */
+#mobileSelect {
+  display: block;
+  margin: 0.5rem auto 1.2rem auto;
+  text-align-last: center;
+  font-size: 1.2rem;
+  font-weight: 500;
+  color: #00eaff;
+  background: rgba(0, 255, 255, 0.05);
+  border: 1px solid rgba(0, 234, 255, 0.6);
+  border-radius: 10px;
+  padding: 0.6rem 1.2rem;
+  box-shadow: 0 0 15px rgba(0, 234, 255, 0.2);
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+#mobileSelect:hover {
+  background: rgba(0, 255, 255, 0.15);
+  box-shadow: 0 0 20px rgba(0, 234, 255, 0.4);
+}
+
+#mobileSelect:focus {
+  outline: none;
+  border-color: #00eaff;
+  box-shadow: 0 0 25px rgba(0, 234, 255, 0.6);
+}
+
+#mobileSelect option {
+  background: #001f33;
+  color: #00eaff;
+  text-align: center;
+  font-weight: 500;
+}
+
+/* BONUS - Jemny glow */
+#teamRatings table,
+#playerRatings table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: center;
+  font-size: 1rem;
+  color: #e6faff;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 10px;
+  box-shadow: 0 0 10px rgba(0, 234, 255, 0.2);
+  backdrop-filter: blur(3px);
+}
+
+/* Skry nadpisy v sekciách Rating tímov a Rating hráčov */
+#teamRatings-section h2,
+#playerRatings-section h2 {
+  display: none;
+}
+
+#teamRatings h2,
+#playerRatings h2 {
+  display: none;
+}

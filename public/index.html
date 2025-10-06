@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Slovenská hokejová Extraliga</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>Slovenská hokejová Extraliga</h1>
+
+    <!-- 📱 mobilné menu -->
+    <div class="mobile-menu">
+        <select id="mobileSelect">
+            <option value="matches">Zápasy</option>
+            <option value="teams">Rating tímov</option>
+            <option value="players">Rating hráčov</option>
+            <option value="mantingal">Mantingal</option>
+        </select>
+    </div>
+
+    <div class="container">
+        <!-- 🏒 Zápasy -->
+        <div class="left section" id="matches-section">
+            <h2>Zápasy</h2>
+            <table id="matches">
+                <thead>
+                    <tr>
+                        <th>Domáci</th>
+                        <th>Hostia</th>
+                        <th>Skóre</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <!-- 📊 Rating tímov -->
+        <div class="middle section" id="teams-section">
+            <h2>Rating tímov</h2>
+            <table id="teamRatings">
+                <thead>
+                    <tr>
+                        <th>Tím</th>
+                        <th>Rating</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <!-- 🧑‍🚀 Rating hráčov + Mantingal (PC) -->
+        <div class="right section" id="players-section">
+            <h2>Rating hráčov</h2>
+            <table id="playerRatings">
+                <thead>
+                    <tr>
+                        <th>Hráč</th>
+                        <th>Rating</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+
+            <!-- Mantingal sa vloží pod rating hráčov v PC -->
+            <div id="mantingal-container-pc"></div>
+        </div>
+
+        <!-- 💰 Mantingal (mobilná verzia) -->
+        <div class="mantingal-mobile section" id="mantingal-container"></div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        // 📱 prepínanie sekcií na mobile
+        document.getElementById("mobileSelect").addEventListener("change", (e) => {
+            const val = e.target.value;
+            document.querySelectorAll(".section").forEach(sec => sec.style.display = "none");
+
+            if (val === "matches") document.getElementById("matches-section").style.display = "block";
+            if (val === "teams") document.getElementById("teams-section").style.display = "block";
+            if (val === "players") document.getElementById("players-section").style.display = "block";
+            if (val === "mantingal") document.getElementById("mantingal-container").style.display = "block";
+        });
+
+        // default – pri štarte na mobile zobraz zápasy
+        document.addEventListener("DOMContentLoaded", () => {
+            if (window.innerWidth <= 768) {
+                document.getElementById("matches-section").style.display = "block";
+            }
+        });
+    </script>
+</body>
+</html>

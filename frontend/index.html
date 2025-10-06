@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Slovenská hokejová Extraliga</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>Slovenská hokejová Extraliga</h1>
+
+    <!-- 📱 mobilné menu -->
+    <div class="mobile-menu">
+        <label for="sectionSelect">Vyber sekciu:</label>
+        <select id="sectionSelect">
+            <option value="left">Zápasy</option>
+            <option value="middle">Rating tímov</option>
+            <option value="right">Rating hráčov</option>
+            <option value="mantingal">Mantingal</option>
+        </select>
+    </div>
+
+    <div class="container">
+        <!-- 🏒 Zápasy -->
+        <div class="left">
+            <h2>Zápasy</h2>
+            <table id="matches">
+                <thead>
+                    <tr>
+                        <th>Domáci</th>
+                        <th>Hostia</th>
+                        <th>Skóre</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- zápasy sa načítajú JS -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- 📊 Rating tímov -->
+        <div class="middle">
+            <h2>Rating tímov</h2>
+            <table id="teamRatings">
+                <thead>
+                    <tr>
+                        <th>Tím</th>
+                        <th>Rating</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- ratingy sa načítajú JS -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- 🧑‍🚀 Rating hráčov -->
+        <div class="right">
+            <h2>Rating hráčov</h2>
+            <table id="playerRatings">
+                <thead>
+                    <tr>
+                        <th>Hráč</th>
+                        <th>Rating</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- top hráči sa načítajú JS -->
+                </tbody>
+            </table>
+
+            <!-- Mantingal na PC ostáva pod hráčmi -->
+            <div id="mantingal-pc"></div>
+        </div>
+
+        <!-- 📈 Mantingal – pre mobil -->
+        <div class="mantingal-mobile">
+            <h2>Mantingal</h2>
+            <div id="mantingal-mobile"></div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

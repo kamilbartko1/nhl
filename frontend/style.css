@@ -1,0 +1,169 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+    color: #333;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+
+    /* 🔥 jemný vodoznak */
+    background: 
+        linear-gradient(rgba(255,255,255,0.85), rgba(255,255,255,0.85)),
+        url("hokejista.jpg") no-repeat center center fixed;
+    background-size: cover;
+}
+
+h1 {
+    text-align: center;
+    font-size: 28px;
+    margin-bottom: 20px;
+    color: #2c3e50;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+}
+
+.container {
+    display: flex;
+    gap: 20px;
+    justify-content: space-between;
+    flex-wrap: nowrap;
+}
+
+/* Rozloženie stĺpcov na PC */
+.left {
+    flex: 2.2;
+    background: #ffffff;
+    padding: 15px;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.middle {
+    flex: 0.9;
+    background: #f9fbfd;
+    padding: 15px;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.right {
+    flex: 0.9;
+    background: #fdfaf6;
+    padding: 15px;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.mantingal-mobile {
+    display: none; /* default skryté – len pre mobil */
+    background: #eef8f0;
+    padding: 15px;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+h2 {
+    text-align: center;
+    margin-bottom: 15px;
+    color: #34495e;
+    font-family: "Trebuchet MS", sans-serif;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th, td {
+    padding: 8px 12px;
+    border-bottom: 1px solid #ddd;
+    text-align: center;
+}
+
+th {
+    background: linear-gradient(to right, #555, #ddd);
+    font-weight: bold;
+    color: white;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+}
+
+tr:hover {
+    background: #f9f9f9;
+}
+
+/* Detaily zápasu */
+.details-box {
+    background: #ffffff;
+    padding: 15px;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    margin-top: 10px;
+}
+
+.teams-stats {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 15px;
+    gap: 15px;
+}
+
+.team-column {
+    width: 48%;
+    padding: 10px;
+    border-radius: 10px;
+}
+
+.team-home {
+    background: #e3f2fd;
+}
+
+.team-away {
+    background: #fff8e1;
+}
+
+.player-line {
+    font-size: 14px;
+    margin-bottom: 6px;
+    text-align: left;
+}
+
+.player-name {
+    font-weight: bold;
+    color: #333;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+}
+
+/* 📱 mobilné menu */
+.mobile-menu {
+    display: none;
+    margin-bottom: 15px;
+    text-align: center;
+}
+
+.mobile-menu select {
+    padding: 8px 12px;
+    font-size: 16px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+/* 📱 mobilné zobrazenie */
+@media (max-width: 768px) {
+    .container {
+        flex-direction: column;
+    }
+
+    .mobile-menu {
+        display: block;
+    }
+
+    .left, .middle, .right, .mantingal-mobile {
+        display: none;
+    }
+
+    .left.active,
+    .middle.active,
+    .right.active,
+    .mantingal-mobile.active {
+        display: block;
+    }
+}

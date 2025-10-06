@@ -1,0 +1,15 @@
+
+
+Ráno / pred prácou:
+
+git checkout main
+git pull origin main
+git checkout peto_branch
+git merge main
+
+
+→ tým si natiahneš najčerstvejší main a zmiešaš ho do svojho branchu.
+
+Počas práce: keď vieš, že kolega urobil veľké zmeny → zopakuješ git pull origin main vo svojej vetve, aby si neostal pozadu.
+
+Keď je tvoja práca hotová → spravíš Push a potom Pull Request do main.

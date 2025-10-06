@@ -1,0 +1,13 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn.lock
+package-lock.json
+
+# Local env / keys (ak by si niekedy pridal)
+.env
+
+# OS/IDE drobnosti
+.DS_Store
+Thumbs.db
+.vscode/
