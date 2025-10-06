@@ -7,13 +7,14 @@ import { fileURLToPath } from "url";
 const app = express();
 const PORT = 3000;
 
-// --- pre __dirname (v ES modules) ---
+// asi musim pridat riadok
+// --- pre __dirname ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// --- konfigurácia ---
+// --- konfigurácia pre NHL ---
 const API_KEY = "WaNt9YL5305o4hT2iGrsnoxUhegUG0St1ZYcs11g";
-const SEASON_ID = "sr:season:131005"; // Extraliga 25/26
+const SEASON_ID = "4a67cca6-b450-45f9-91c6-48e92ac19069"; // NHL 2025/26 Regular Season
 
 // rating – tímy
 const START_RATING = 1500;
@@ -31,15 +32,13 @@ const MANTINGALE_START_STAKE = 1;
 
 app.use(cors());
 app.use(express.json());
-
-// 👉 sprístupní frontend
 app.use(express.static(path.join(__dirname, "../frontend")));
 
-// pomocná funkcia: zoradenie zápasov
+// --- Pomocná funkcia: zoradenie zápasov ---
 function sortByStartTimeAsc(matches) {
   return [...matches].sort((a, b) => {
-    const ta = new Date(a.sport_event.start_time).getTime() || 0;
-    const tb = new Date(b.sport_event.start_time).getTime() || 0;
+    const ta = new Date(a.scheduled).getTime() || 0;
+    const tb = new Date(b.scheduled).getTime() || 0;
     return ta - tb;
   });
 }
@@ -49,46 +48,30 @@ function sortByStartTimeAsc(matches) {
 // všetky zápasy + ratingy + Mantingal simulácia
 app.get("/matches", async (req, res) => {
   try {
-    const url = `https://api.sportradar.com/icehockey/trial/v2/en/seasons/${SEASON_ID}/summaries.json?api_key=${API_KEY}`;
+    // Endpoint pre zápasy sezóny NHL
+    const url = `https://api.sportradar.com/nhl/trial/v7/en/seasons/${SEASON_ID}/summaries.json?api_key=${API_KEY}`;
     const response = await axios.get(url);
     let matches = response.data.summaries || [];
 
     // ⚡ filter: len odohrané zápasy
     matches = matches.filter(
       (m) =>
-        m?.sport_event_status?.status === "closed" ||
-        m?.sport_event_status?.status === "ap"
+        m?.status === "closed" ||
+        m?.status === "complete" ||
+        m?.status === "postponed"
     );
 
-    // 🟢 doplň hráčske štatistiky pre každý odohraný zápas
-    const matchesWithStats = await Promise.all(
-      matches.map(async (m) => {
-        try {
-          const matchId = m.sport_event.id;
-          const detailsUrl = `https://api.sportradar.com/icehockey/trial/v2/en/sport_events/${matchId}/summary.json?api_key=${API_KEY}`;
-          const det = await axios.get(detailsUrl);
-          m.statistics = det.data.statistics;
-          return m;
-        } catch {
-          return m;
-        }
-      })
-    );
-
-    // zoskupiť podľa dátumu (YYYY-MM-DD)
+    // Zoskupiť podľa dátumu (YYYY-MM-DD)
     const grouped = {};
-    matchesWithStats.forEach((m) => {
-      const date = new Date(m.sport_event.start_time)
-        .toISOString()
-        .slice(0, 10);
+    matches.forEach((m) => {
+      const date = new Date(m.scheduled).toISOString().slice(0, 10);
       if (!grouped[date]) grouped[date] = [];
       grouped[date].push(m);
     });
 
-    // zoradené dni od najnovšieho po najstarší
     const days = Object.keys(grouped).sort((a, b) => new Date(b) - new Date(a));
 
-    // pridaj čísla kôl
+    // Pridaj čísla kôl
     let roundCounter = days.length;
     const rounds = [];
     for (const day of days) {
@@ -100,8 +83,8 @@ app.get("/matches", async (req, res) => {
       roundCounter--;
     }
 
-    // --- výpočty ratingov a mantingalu ---
-    const ordered = sortByStartTimeAsc(matchesWithStats);
+    // --- Výpočty ratingov a mantingalu ---
+    const ordered = sortByStartTimeAsc(matches);
 
     const teamRatings = {};
     const playerRatingsById = {};
@@ -125,8 +108,8 @@ app.get("/matches", async (req, res) => {
     };
 
     for (const match of ordered) {
-      const status = match?.sport_event_status?.status;
-      if (status !== "closed" && status !== "ap") continue;
+      const status = match?.status;
+      if (status !== "closed" && status !== "complete") continue;
 
       const currentTop3 = Object.entries(playerRatingsById)
         .sort((a, b) => b[1] - a[1])
@@ -173,13 +156,13 @@ app.get("/matches", async (req, res) => {
         }
       });
 
-      const home = match.sport_event.competitors[0];
-      const away = match.sport_event.competitors[1];
+      const home = match.home;
+      const away = match.away;
       const homeName = home.name;
       const awayName = away.name;
 
-      const homeScore = match.sport_event_status.home_score ?? 0;
-      const awayScore = match.sport_event_status.away_score ?? 0;
+      const homeScore = match.scoring?.home?.total ?? 0;
+      const awayScore = match.scoring?.away?.total ?? 0;
 
       if (!teamRatings[homeName]) teamRatings[homeName] = START_RATING;
       if (!teamRatings[awayName]) teamRatings[awayName] = START_RATING;
@@ -246,8 +229,8 @@ app.get("/matches", async (req, res) => {
     };
 
     res.json({
-      matches: matchesWithStats, // všetky zápasy s dátami
-      rounds, // po kolách
+      matches,
+      rounds,
       teamRatings,
       playerRatings: playerRatingsByName,
       martingale: {
@@ -256,33 +239,12 @@ app.get("/matches", async (req, res) => {
       },
     });
   } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ error: "Chyba pri načítaní zápasov" });
-  }
-});
-
-// detail zápasu
-app.get("/match-details/:homeId/:awayId", async (req, res) => {
-  try {
-    const { homeId, awayId } = req.params;
-    const url = `https://api.sportradar.com/icehockey/trial/v2/en/competitors/${homeId}/versus/${awayId}/summaries.json?api_key=${API_KEY}`;
-    const response = await axios.get(url);
-
-    const lastMeeting = response.data.last_meetings?.[0];
-    if (!lastMeeting) {
-      return res.status(404).json({ error: "Žiadny zápas nenájdený" });
-    }
-
-    res.json(lastMeeting);
-  } catch (err) {
-    console.error(err.message);
-    res
-      .status(500)
-      .json({ error: "Chyba pri načítaní detailov zápasu" });
+    console.error("❌ Chyba pri načítaní NHL zápasov:", err.message);
+    res.status(500).json({ error: "Chyba pri načítaní NHL zápasov" });
   }
 });
 
 // ====================== SERVER START ======================
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server beží na http://localhost:${PORT}`);
+  console.log(`🏒 NHL server beží na http://localhost:${PORT}`);
 });
