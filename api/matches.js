@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const API_KEY = "WaNt9YL5305o4hT2iGrsnoxUhegUG0St1ZYcs11g";
-const SEASON_ID = "sr:season:131005"; // Extraliga 25/26
+const SEASON_ID = "4a67cca6-b450-45f9-91c6-48e92ac19069"; // Nhl 25/26
 
 // rating – tímy
 const START_RATING = 1500;
