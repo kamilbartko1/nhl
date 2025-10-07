@@ -7,7 +7,6 @@ import { fileURLToPath } from "url";
 const app = express();
 const PORT = 3000;
 
-// asi musim pridat riadok
 // --- pre __dirname ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -34,7 +33,6 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "../frontend")));
 
-// --- Pomocná funkcia: zoradenie zápasov ---
 function sortByStartTimeAsc(matches) {
   return [...matches].sort((a, b) => {
     const ta = new Date(a.scheduled).getTime() || 0;
@@ -43,17 +41,12 @@ function sortByStartTimeAsc(matches) {
   });
 }
 
-// ====================== ENDPOINTY ======================
-
-// všetky zápasy + ratingy + Mantingal simulácia
 app.get("/matches", async (req, res) => {
   try {
-    // Endpoint pre zápasy sezóny NHL
     const url = `https://api.sportradar.com/nhl/trial/v7/en/seasons/${SEASON_ID}/summaries.json?api_key=${API_KEY}`;
     const response = await axios.get(url);
     let matches = response.data.summaries || [];
 
-    // ⚡ filter: len odohrané zápasy
     matches = matches.filter(
       (m) =>
         m?.status === "closed" ||
@@ -61,7 +54,6 @@ app.get("/matches", async (req, res) => {
         m?.status === "postponed"
     );
 
-    // Zoskupiť podľa dátumu (YYYY-MM-DD)
     const grouped = {};
     matches.forEach((m) => {
       const date = new Date(m.scheduled).toISOString().slice(0, 10);
@@ -71,7 +63,6 @@ app.get("/matches", async (req, res) => {
 
     const days = Object.keys(grouped).sort((a, b) => new Date(b) - new Date(a));
 
-    // Pridaj čísla kôl
     let roundCounter = days.length;
     const rounds = [];
     for (const day of days) {
@@ -83,9 +74,7 @@ app.get("/matches", async (req, res) => {
       roundCounter--;
     }
 
-    // --- Výpočty ratingov a mantingalu ---
     const ordered = sortByStartTimeAsc(matches);
-
     const teamRatings = {};
     const playerRatingsById = {};
     const playerNamesById = {};
@@ -244,7 +233,6 @@ app.get("/matches", async (req, res) => {
   }
 });
 
-// ====================== SERVER START ======================
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🏒 NHL server beží na http://localhost:${PORT}`);
 });
