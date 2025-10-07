@@ -7,6 +7,7 @@ let allMatches = [];
 const BASE_STAKE = 1;
 const ODDS = 2.5;
 
+// Tu dopisujem zmenu a oznacujem si, ze toto je moj jedinecny kod (/api)
 // API cez Vercel serverless funkcie (/api)
 const API_BASE = "";
 
