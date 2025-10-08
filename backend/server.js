@@ -14,7 +14,6 @@ const __dirname = path.dirname(__filename);
 
 // --- KONFIGURÁCIA ---
 const API_KEY = "WaNt9YL5305o4hT2iGrsnoxUhegUG0St1ZYcs11g";
-const SEASON_ID = "4a67cca6-b450-45f9-91c6-48e92ac19069"; // NHL 2025–26 Regular Season
 
 // rating – tímy
 const START_RATING = 1500;
@@ -50,7 +49,7 @@ function sortByStartTimeAsc(matches) {
 // všetky zápasy + ratingy + Mantingal simulácia
 app.get("/matches", async (req, res) => {
   try {
-    const url = `https://api.sportradar.com/nhl/trial/v7/en/seasons/${SEASON_ID}/schedule.json?api_key=${API_KEY}`;
+    const url = `https://api.sportradar.com/nhl/trial/v7/en/games/2025/REG/schedule.json?api_key=${API_KEY}`;
     const response = await axios.get(url);
     let matches = response.data.games || [];
 
