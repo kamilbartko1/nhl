@@ -185,43 +185,39 @@ function displayPlayerRatings() {
 }
 
 /*************************************************
- * MANTINGAL – simulácia sezóny (chronologicky po zápasoch NHL)
+ * MANTINGAL – NHL verzia (bez denných resetov)
  *************************************************/
 function displayMantingal() {
   const c = document.getElementById("mantingal-container");
   if (!c) return;
 
-  // vyber len zápasy, ktoré majú štatistiky hráčov
-  const completed = (allMatches || []).filter(
-    (m) =>
-      ["closed", "complete", "final"].includes(m.status) &&
-      m.statistics &&
-      (m.statistics?.home?.players || m.statistics?.away?.players)
-  );
+  const completed = (allMatches || [])
+    .filter((m) => ["closed", "complete", "final"].includes(m.status))
+    .filter((m) => {
+      const h = m.statistics?.home || {};
+      const a = m.statistics?.away || {};
+      return (
+        (h.players?.length || a.players?.length) ||
+        (h.leaders?.points?.length || a.leaders?.points?.length)
+      );
+    });
 
   if (!completed.length) {
     c.innerHTML = "<p>Žiadne odohrané zápasy so štatistikami</p>";
+    if (isMobile()) c.style.display = "block";
     return;
   }
 
-  // 🔹 v mobile môže byť sekcia skrytá — zobraz ju
   if (isMobile()) c.style.display = "block";
 
-  // zoradiť zápasy chronologicky (ako v reálnej sezóne)
-  completed.sort(
-    (a, b) => new Date(a.scheduled) - new Date(b.scheduled)
-  );
+  // zoradíme zápasy podľa času
+  completed.sort((a, b) => new Date(a.scheduled) - new Date(b.scheduled));
 
-  // priebežné ratingy hráčov (ako ELO)
-  const ratingSoFar = { ...playerRatings };
-  const initRating = (name) => {
-    if (ratingSoFar[name] == null) ratingSoFar[name] = 1500;
-  };
-
-  // Mantingal stav pre hráčov
   const BASE_STAKE = 1;
   const ODDS = 2.5;
-  const state = {};
+  const ratingSoFar = { ...playerRatings };
+  const state = {}; // stav pre hráčov z TOP3
+
   const ensureState = (name) => {
     if (!state[name]) {
       state[name] = {
@@ -230,84 +226,87 @@ function displayMantingal() {
         totalWins: 0,
         lastResult: "—",
         log: [],
+        waiting: true, // čaká na zápas
       };
     }
     return state[name];
   };
 
-  // 🧠 HLAVNÁ LOGIKA: prechádzame každý zápas NHL chronologicky
+  // Prejdeme všetky zápasy v chronologickom poradí
   for (const match of completed) {
-    const allPlayers = [];
-    const collect = (side) => {
-      const team = match.statistics?.[side];
-      if (!team) return;
-      if (Array.isArray(team.players)) allPlayers.push(...team.players);
-      if (team.leaders?.points) allPlayers.push(...team.leaders.points);
-    };
-    collect("home");
-    collect("away");
+    const date = new Date(match.scheduled).toISOString().slice(0, 10);
+    const home = match.statistics?.home || {};
+    const away = match.statistics?.away || {};
+    const allPlayers = [
+      ...(home.players || []),
+      ...(away.players || []),
+      ...(home.leaders?.points || []),
+      ...(away.leaders?.points || []),
+    ];
 
-    // aktuálna TOP3 pred týmto zápasom
+    // Aktualizujeme ratingy všetkých hráčov
+    for (const p of allPlayers) {
+      const name = p.full_name || p.name || `${p.first_name} ${p.last_name}`;
+      if (!ratingSoFar[name]) ratingSoFar[name] = 1500;
+      ratingSoFar[name] +=
+        (p.statistics?.total?.goals || 0) * 20 +
+        (p.statistics?.total?.assists || 0) * 10;
+    }
+
+    // Vypočítaj aktuálne TOP3 hráčov
     const top3 = Object.entries(ratingSoFar)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3)
       .map(([name]) => name);
 
-    // pre každého hráča z TOP3 skontroluj, či hral v tomto zápase
+    // Pre každého z TOP3 skontroluj, či hral v tomto zápase
     for (const playerName of top3) {
-      const p = allPlayers.find(
-        (pl) =>
-          pl.full_name === playerName ||
-          pl.name === playerName ||
-          `${pl.first_name} ${pl.last_name}`.trim() === playerName
+      const s = ensureState(playerName);
+      const player = allPlayers.find(
+        (p) =>
+          p.full_name === playerName ||
+          p.name === playerName ||
+          `${p.first_name} ${p.last_name}`.trim() === playerName
       );
 
-      if (p) {
-        const goals = p.statistics?.total?.goals || 0;
-        const s = ensureState(playerName);
-        const stakeBefore = s.stake;
-        s.totalStakes += stakeBefore;
+      // ak ešte nehral, čakáme
+      if (!player) continue;
 
-        if (goals > 0) {
-          const win = stakeBefore * ODDS;
-          s.totalWins += win;
-          s.stake = BASE_STAKE;
-          s.lastResult = "✅ výhra";
-          s.log.push({
-            date: new Date(match.scheduled).toISOString().slice(0, 10),
-            stake_before: stakeBefore,
-            goals,
-            result: "výhra",
-            win_amount: win.toFixed(2),
-            new_stake: s.stake,
-          });
-        } else {
-          s.stake *= 2;
-          s.lastResult = "❌ prehra";
-          s.log.push({
-            date: new Date(match.scheduled).toISOString().slice(0, 10),
-            stake_before: stakeBefore,
-            goals: 0,
-            result: "prehra",
-            win_amount: 0,
-            new_stake: s.stake,
-          });
-        }
+      // hráč hral – vyhodnotíme stávku
+      const stakeBefore = s.stake;
+      s.totalStakes += stakeBefore;
+      const goals = player.statistics?.total?.goals || 0;
+
+      if (goals > 0) {
+        const win = stakeBefore * ODDS;
+        s.totalWins += win;
+        s.stake = BASE_STAKE;
+        s.lastResult = "✅ výhra";
+        s.log.push({
+          date,
+          result: "výhra",
+          goals,
+          stake_before: stakeBefore,
+          win_amount: win.toFixed(2),
+          new_stake: s.stake,
+        });
+      } else {
+        s.stake *= 2;
+        s.lastResult = "❌ prehra";
+        s.log.push({
+          date,
+          result: "prehra",
+          goals: 0,
+          stake_before: stakeBefore,
+          win_amount: 0,
+          new_stake: s.stake,
+        });
       }
-    }
-
-    // po zápase aktualizuj ratingy všetkých hráčov, ktorí hrali
-    for (const p of allPlayers) {
-      const name =
-        p.full_name || p.name || `${p.first_name} ${p.last_name}`;
-      initRating(name);
-      ratingSoFar[name] +=
-        (p.statistics?.total?.goals || 0) * 20 +
-        (p.statistics?.total?.assists || 0) * 10;
+      s.waiting = true; // po odohraní znovu čaká na ďalší zápas
     }
   }
 
-  // zhrnutie
+  // zhrnutie a render
   const currentTop3 = Object.entries(ratingSoFar)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3);
@@ -320,15 +319,14 @@ function displayMantingal() {
     },
     { stakes: 0, wins: 0 }
   );
-  const profit = totals.wins - totals.stakes;
 
-  // 🖼️ RENDER DO DOM
+  const profit = totals.wins - totals.stakes;
   c.innerHTML = "";
 
   const table = document.createElement("table");
   table.innerHTML = `
     <thead>
-      <tr><th colspan="5">Mantingal – chronologický (kurz ${ODDS})</th></tr>
+      <tr><th colspan="5">Mantingal – NHL kontinuálny (kurz ${ODDS})</th></tr>
       <tr><th>Hráč</th><th>Kurz</th><th>Vklad</th><th>Posledný výsledok</th><th>Denník</th></tr>
     </thead>
     <tbody>
@@ -341,8 +339,8 @@ function displayMantingal() {
                 .map(
                   (e) => `
               <div>
-                <b>${e.date}</b> – stake: ${e.stake_before} €, góly: ${e.goals},
-                ${e.result}, výhra: ${e.win_amount} €, nový stake: ${e.new_stake} €
+                <b>${e.date}</b> – góly: ${e.goals}, ${e.result},
+                vklad: ${e.stake_before} €, výhra: ${e.win_amount} €, nový stake: ${e.new_stake} €
               </div>`
                 )
                 .join("")
@@ -373,13 +371,11 @@ function displayMantingal() {
   `;
   c.appendChild(summary);
 
-  // kliknutie na denník
   table.querySelectorAll(".btn-log").forEach((btn) => {
     btn.addEventListener("click", () => {
       const target = document.getElementById(btn.dataset.target);
       if (target)
-        target.style.display =
-          target.style.display === "none" ? "" : "none";
+        target.style.display = target.style.display === "none" ? "" : "none";
     });
   });
 }
