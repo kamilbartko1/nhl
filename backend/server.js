@@ -13,7 +13,8 @@ const __dirname = path.dirname(__filename);
 
 // --- konfigurácia pre NHL ---
 const API_KEY = "WaNt9YL5305o4hT2iGrsnoxUhegUG0St1ZYcs11g";
-const SEASON_ID = "4a67cca6-b450-45f9-91c6-48e92ac19069"; // NHL 2025/26 Regular Season
+const SEASON_YEAR = 2025; // NHL 2025/26 Regular Season
+const SEASON_TYPE = "REG"; // Regular Season
 
 // rating – tímy
 const START_RATING = 1500;
@@ -45,9 +46,10 @@ function sortByStartTimeAsc(matches) {
 // ====================== HLAVNÝ ENDPOINT ======================
 app.get("/matches", async (req, res) => {
   try {
-    // ✅ správny endpoint pre NHL (v7)
-    const url = `https://api.sportradar.com/nhl/trial/v7/en/seasons/${SEASON_ID}/schedules.json?api_key=${API_KEY}`;
+    // ✅ OPRAVA: správny endpoint pre NHL schedule
+    const url = `https://api.sportradar.com/nhl/trial/v7/en/games/${SEASON_YEAR}/${SEASON_TYPE}/schedule.json?api_key=${API_KEY}`;
     const response = await axios.get(url);
+
     let matches = response.data.games || [];
 
     // ✅ vyfiltruj iba odohrané zápasy
