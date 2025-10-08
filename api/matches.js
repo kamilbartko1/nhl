@@ -27,9 +27,9 @@ function sortByStartTimeAsc(matches) {
 
 export default async function handler(req, res) {
   try {
-    const url = `https://api.sportradar.com/icehockey/trial/v2/en/seasons/${SEASON_ID}/summaries.json?api_key=${API_KEY}`;
+    const url = `https://api.sportradar.com/nhl/trial/v7/en/seasons/${SEASON_ID}/schedules.json?api_key=${API_KEY}`;
     const response = await axios.get(url);
-    const matches = response.data.summaries || [];
+    const matches = response.data.games || [];
 
     const ordered = sortByStartTimeAsc(matches);
 
@@ -102,8 +102,8 @@ export default async function handler(req, res) {
       const homeName = home.name;
       const awayName = away.name;
 
-      const homeScore = match.sport_event_status.home_score ?? 0;
-      const awayScore = match.sport_event_status.away_score ?? 0;
+      const homeScore = match.home_points ?? 0;
+      const awayScore = match.away_points ?? 0;
 
       if (!teamRatings[homeName]) teamRatings[homeName] = START_RATING;
       if (!teamRatings[awayName]) teamRatings[awayName] = START_RATING;
