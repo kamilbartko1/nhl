@@ -178,22 +178,225 @@ function displayPlayerRatings() {
 }
 
 /*************************************************
- * MANTINGAL – z backendu
+ * MANTINGAL – simulácia sezóny + DENNÍK (plná logika)
  *************************************************/
 function displayMantingal() {
-  const container = document.getElementById("mantingal-container");
-  container.innerHTML = `
-    <table>
-      <thead>
-        <tr><th colspan="3">Mantingal – simulácia</th></tr>
-      </thead>
-      <tbody>
-        <tr><td>Celkové stávky</td><td>${martingaleSummary.totalStaked ?? 0} €</td></tr>
-        <tr><td>Výhry</td><td>${martingaleSummary.totalReturn ?? 0} €</td></tr>
-        <tr><td>Profit</td><td>${martingaleSummary.profit ?? 0} €</td></tr>
-      </tbody>
-    </table>
+  // len odohrané zápasy s hráčskymi štatistikami
+  const completed = (allMatches || [])
+    .filter((m) =>
+      ["closed", "complete", "final"].includes(m.status)
+    )
+    .filter((m) => {
+      const hasPlayers =
+        m.statistics &&
+        (m.statistics?.home?.leaders?.points ||
+         m.statistics?.away?.leaders?.points ||
+         m.statistics?.home?.players ||
+         m.statistics?.away?.players);
+      return Boolean(hasPlayers);
+    });
+
+  if (!completed.length) {
+    const c = document.getElementById("mantingal-container");
+    c.innerHTML = "<p>Žiadne odohrané zápasy so štatistikami</p>";
+    return;
+  }
+
+  // zoradiť chronologicky
+  completed.sort(
+    (a, b) => new Date(a.scheduled) - new Date(b.scheduled)
+  );
+
+  // zoskupiť podľa dňa
+  const byDay = {};
+  for (const m of completed) {
+    const d = new Date(m.scheduled).toISOString().slice(0, 10);
+    (byDay[d] ||= []).push(m);
+  }
+  const days = Object.keys(byDay).sort();
+
+  // priebežné ratingy hráčov
+  const ratingSoFar = { ...playerRatings };
+  const initRating = (name) => {
+    if (ratingSoFar[name] == null) ratingSoFar[name] = 1500;
+  };
+
+  // stav mantingalu
+  const BASE_STAKE = 1;
+  const ODDS = 2.5;
+  const state = {};
+  const ensureState = (name) => {
+    if (!state[name]) {
+      state[name] = {
+        stake: BASE_STAKE,
+        totalStakes: 0,
+        totalWins: 0,
+        lastResult: "—",
+        log: [],
+      };
+    }
+    return state[name];
+  };
+
+  // simulácia deň po dni
+  for (const day of days) {
+    const top3 = Object.entries(ratingSoFar)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([name]) => name);
+
+    for (const playerName of top3) {
+      let played = false;
+      let goals = 0;
+
+      for (const match of byDay[day]) {
+        const allPlayers = [];
+        const collect = (side) => {
+          const team = match.statistics?.[side];
+          if (!team) return;
+          if (Array.isArray(team.players)) allPlayers.push(...team.players);
+          if (team.leaders?.points)
+            allPlayers.push(...team.leaders.points);
+        };
+        collect("home");
+        collect("away");
+
+        const player = allPlayers.find(
+          (p) =>
+            p.full_name === playerName ||
+            p.name === playerName ||
+            `${p.first_name} ${p.last_name}`.trim() === playerName
+        );
+        if (player) {
+          played = true;
+          goals += player.statistics?.total?.goals || 0;
+        }
+      }
+
+      if (played) {
+        const s = ensureState(playerName);
+        const stakeBefore = s.stake;
+        s.totalStakes += stakeBefore;
+
+        if (goals > 0) {
+          const win = stakeBefore * ODDS;
+          s.totalWins += win;
+          s.stake = BASE_STAKE;
+          s.lastResult = "✅ výhra";
+          s.log.push({
+            date: day,
+            stake_before: stakeBefore,
+            goals,
+            result: "výhra",
+            win_amount: win.toFixed(2),
+            new_stake: s.stake,
+          });
+        } else {
+          s.stake *= 2;
+          s.lastResult = "❌ prehra";
+          s.log.push({
+            date: day,
+            stake_before: stakeBefore,
+            goals: 0,
+            result: "prehra",
+            win_amount: 0,
+            new_stake: s.stake,
+          });
+        }
+      }
+    }
+
+    // po dni aktualizuj priebežné ratingy
+    for (const match of byDay[day]) {
+      const allPlayers = [];
+      ["home", "away"].forEach((side) => {
+        const team = match.statistics?.[side];
+        if (team?.players) allPlayers.push(...team.players);
+      });
+      for (const p of allPlayers) {
+        const name = p.full_name || p.name || `${p.first_name} ${p.last_name}`;
+        initRating(name);
+        ratingSoFar[name] +=
+          (p.statistics?.total?.goals || 0) * 20 +
+          (p.statistics?.total?.assists || 0) * 10;
+      }
+    }
+  }
+
+  // zhrnutie
+  const currentTop3 = Object.entries(playerRatings)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3);
+
+  const totals = Object.values(state).reduce(
+    (acc, s) => {
+      acc.stakes += s.totalStakes;
+      acc.wins += s.totalWins;
+      return acc;
+    },
+    { stakes: 0, wins: 0 }
+  );
+  const profit = totals.wins - totals.stakes;
+
+  // render
+  const c = document.getElementById("mantingal-container");
+  c.innerHTML = "";
+
+  const table = document.createElement("table");
+  table.innerHTML = `
+    <thead>
+      <tr><th colspan="5">Mantingal – TOP 3 (kurz ${ODDS})</th></tr>
+      <tr><th>Hráč</th><th>Kurz</th><th>Vklad</th><th>Posledný výsledok</th><th>Denník</th></tr>
+    </thead>
+    <tbody>
+      ${currentTop3
+        .map(([name]) => {
+          const s = state[name] || { stake: BASE_STAKE, lastResult: "—", log: [] };
+          const logId = `log-${slug(name)}`;
+          const logHtml = s.log.length
+            ? s.log
+                .map(
+                  (e) => `
+              <div>
+                <b>${e.date}</b> – stake: ${e.stake_before} €, góly: ${e.goals},
+                ${e.result}, výhra: ${e.win_amount} €, nový stake: ${e.new_stake} €
+              </div>`
+                )
+                .join("")
+            : "<div>Denník je prázdny</div>";
+
+          return `
+            <tr>
+              <td>${name}</td>
+              <td>${ODDS}</td>
+              <td>${s.stake} €</td>
+              <td>${s.lastResult}</td>
+              <td><button class="btn-log" data-target="${logId}">📜</button></td>
+            </tr>
+            <tr id="${logId}" style="display:none;">
+              <td colspan="5" style="text-align:left;">${logHtml}</td>
+            </tr>`;
+        })
+        .join("")}
+    </tbody>
   `;
+  c.appendChild(table);
+
+  const summary = document.createElement("div");
+  summary.innerHTML = `
+    <p><b>Celkové stávky:</b> ${totals.stakes.toFixed(2)} €</p>
+    <p><b>Výhry:</b> ${totals.wins.toFixed(2)} €</p>
+    <p><b>Profit:</b> ${profit.toFixed(2)} €</p>
+  `;
+  c.appendChild(summary);
+
+  table.querySelectorAll(".btn-log").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const target = document.getElementById(btn.dataset.target);
+      if (target)
+        target.style.display = target.style.display === "none" ? "" : "none";
+    });
+  });
 }
 
 /*************************************************
