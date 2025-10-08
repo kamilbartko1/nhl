@@ -47,23 +47,19 @@ function setupMobileSectionsOnLoad() {
   }
 
   select.addEventListener("change", () => {
-  const selected = select.value;
+    const selected = select.value;
+    document.querySelectorAll(".section").forEach(sec => sec.style.display = "none");
+    const mantingalContainer = document.getElementById("mantingal-container");
 
-  // Skry všetky sekcie
-  document.querySelectorAll(".section").forEach(sec => sec.style.display = "none");
-  const mantingalContainer = document.getElementById("mantingal-container");
-
-  if (selected === "mantingal") {
-    // Zobraz Mantingal
-    mantingalContainer.style.display = "block";
-    // 🧠 Po krátkej pauze vyrenderuj (aby bol DOM hotový)
-    setTimeout(displayMantingal, 100);
-  } else {
-    mantingalContainer.style.display = "none";
-    const sectionToShow = document.getElementById(`${selected}-section`);
-    if (sectionToShow) sectionToShow.style.display = "block";
-  }
-});
+    if (selected === "mantingal") {
+      mantingalContainer.style.display = "block";
+      setTimeout(displayMantingal, 200);
+    } else {
+      mantingalContainer.style.display = "none";
+      const sectionToShow = document.getElementById(`${selected}-section`);
+      if (sectionToShow) sectionToShow.style.display = "block";
+    }
+  });
 }
 
 /*************************************************
@@ -192,20 +188,11 @@ function displayPlayerRatings() {
  * MANTINGAL – simulácia sezóny + DENNÍK (plná logika)
  *************************************************/
 function displayMantingal() {
-  // 🧩 Sekcia Mantingal
   const c = document.getElementById("mantingal-container");
+  if (!c) return;
 
-  // 🧠 Oprava: ak si na mobile, sekcia mohla byť defaultne skrytá
-  if (isMobile()) {
-    c.style.display = "block";
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  // len odohrané zápasy s hráčskymi štatistikami
   const completed = (allMatches || [])
-    .filter((m) =>
-      ["closed", "complete", "final"].includes(m.status)
-    )
+    .filter((m) => ["closed", "complete", "final"].includes(m.status))
     .filter((m) => {
       const hasPlayers =
         m.statistics &&
@@ -218,15 +205,13 @@ function displayMantingal() {
 
   if (!completed.length) {
     c.innerHTML = "<p>Žiadne odohrané zápasy so štatistikami</p>";
+    if (isMobile()) c.style.display = "block";
     return;
   }
 
-  // zoradiť chronologicky
-  completed.sort(
-    (a, b) => new Date(a.scheduled) - new Date(b.scheduled)
-  );
+  if (isMobile()) c.style.display = "block";
 
-  // zoskupiť podľa dňa
+  completed.sort((a, b) => new Date(a.scheduled) - new Date(b.scheduled));
   const byDay = {};
   for (const m of completed) {
     const d = new Date(m.scheduled).toISOString().slice(0, 10);
@@ -234,13 +219,11 @@ function displayMantingal() {
   }
   const days = Object.keys(byDay).sort();
 
-  // priebežné ratingy hráčov
   const ratingSoFar = { ...playerRatings };
   const initRating = (name) => {
     if (ratingSoFar[name] == null) ratingSoFar[name] = 1500;
   };
 
-  // stav mantingalu
   const BASE_STAKE = 1;
   const ODDS = 2.5;
   const state = {};
@@ -257,7 +240,6 @@ function displayMantingal() {
     return state[name];
   };
 
-  // simulácia deň po dni
   for (const day of days) {
     const top3 = Object.entries(ratingSoFar)
       .sort((a, b) => b[1] - a[1])
@@ -274,8 +256,7 @@ function displayMantingal() {
           const team = match.statistics?.[side];
           if (!team) return;
           if (Array.isArray(team.players)) allPlayers.push(...team.players);
-          if (team.leaders?.points)
-            allPlayers.push(...team.leaders.points);
+          if (team.leaders?.points) allPlayers.push(...team.leaders.points);
         };
         collect("home");
         collect("away");
@@ -325,7 +306,6 @@ function displayMantingal() {
       }
     }
 
-    // po dni aktualizuj priebežné ratingy
     for (const match of byDay[day]) {
       const allPlayers = [];
       ["home", "away"].forEach((side) => {
@@ -342,7 +322,6 @@ function displayMantingal() {
     }
   }
 
-  // zhrnutie
   const currentTop3 = Object.entries(playerRatings)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3);
@@ -357,7 +336,6 @@ function displayMantingal() {
   );
   const profit = totals.wins - totals.stakes;
 
-  // render
   c.innerHTML = "";
 
   const table = document.createElement("table");
@@ -382,7 +360,6 @@ function displayMantingal() {
                 )
                 .join("")
             : "<div>Denník je prázdny</div>";
-
           return `
             <tr>
               <td>${name}</td>
@@ -417,3 +394,10 @@ function displayMantingal() {
   });
 }
 
+/*************************************************
+ * ŠTART CELEJ APPKY
+ *************************************************/
+window.addEventListener("DOMContentLoaded", () => {
+  setupMobileSectionsOnLoad();
+  fetchMatches();
+});
