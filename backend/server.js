@@ -33,6 +33,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "../frontend")));
 
+// pomocná funkcia
 function sortByStartTimeAsc(matches) {
   return [...matches].sort((a, b) => {
     const ta = new Date(a.scheduled).getTime() || 0;
@@ -41,19 +42,30 @@ function sortByStartTimeAsc(matches) {
   });
 }
 
+// ====================== HLAVNÝ ENDPOINT ======================
 app.get("/matches", async (req, res) => {
   try {
+    // ✅ správny endpoint pre NHL (v7)
     const url = `https://api.sportradar.com/nhl/trial/v7/en/seasons/${SEASON_ID}/schedules.json?api_key=${API_KEY}`;
     const response = await axios.get(url);
-    let matches = response.data.summaries || [];
+    let matches = response.data.games || [];
 
+    // ✅ vyfiltruj iba odohrané zápasy
     matches = matches.filter(
-      (m) =>
-        m?.status === "closed" ||
-        m?.status === "complete" ||
-        m?.status === "postponed"
+      (m) => m.status === "closed" || m.status === "complete"
     );
 
+    // Ak žiadne odohrané – pošli späť prázdne pole
+    if (!matches.length) {
+      return res.json({
+        matches: [],
+        teamRatings: {},
+        playerRatings: {},
+        martingale: { top3: [], summary: {} },
+      });
+    }
+
+    // --- zoskupiť podľa dátumu ---
     const grouped = {};
     matches.forEach((m) => {
       const date = new Date(m.scheduled).toISOString().slice(0, 10);
@@ -62,7 +74,6 @@ app.get("/matches", async (req, res) => {
     });
 
     const days = Object.keys(grouped).sort((a, b) => new Date(b) - new Date(a));
-
     let roundCounter = days.length;
     const rounds = [];
     for (const day of days) {
@@ -74,6 +85,7 @@ app.get("/matches", async (req, res) => {
       roundCounter--;
     }
 
+    // --- Výpočty ratingov a mantingalu ---
     const ordered = sortByStartTimeAsc(matches);
     const teamRatings = {};
     const playerRatingsById = {};
@@ -147,11 +159,10 @@ app.get("/matches", async (req, res) => {
 
       const home = match.home;
       const away = match.away;
-      const homeName = home.name;
-      const awayName = away.name;
-
-      const homeScore = match.scoring?.home?.total ?? 0;
-      const awayScore = match.scoring?.away?.total ?? 0;
+      const homeName = home?.name || "TBD";
+      const awayName = away?.name || "TBD";
+      const homeScore = match.home_points ?? 0;
+      const awayScore = match.away_points ?? 0;
 
       if (!teamRatings[homeName]) teamRatings[homeName] = START_RATING;
       if (!teamRatings[awayName]) teamRatings[awayName] = START_RATING;
@@ -166,22 +177,6 @@ app.get("/matches", async (req, res) => {
         teamRatings[awayName] += WIN_POINTS;
         teamRatings[homeName] += LOSS_POINTS;
       }
-
-      const comps = match?.statistics?.totals?.competitors || [];
-      comps.forEach((team) => {
-        (team.players || []).forEach((player) => {
-          const pid = player.id;
-          const name = player.name;
-          if (!pid) return;
-          playerNamesById[pid] = name;
-          if (playerRatingsById[pid] == null)
-            playerRatingsById[pid] = START_RATING;
-          const g = player?.statistics?.goals ?? 0;
-          const a = player?.statistics?.assists ?? 0;
-          playerRatingsById[pid] +=
-            g * PLAYER_GOAL_POINTS + a * PLAYER_ASSIST_POINTS;
-        });
-      });
     }
 
     const playerRatingsByName = {};
@@ -233,6 +228,7 @@ app.get("/matches", async (req, res) => {
   }
 });
 
+// ====================== SERVER START ======================
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🏒 NHL server beží na http://localhost:${PORT}`);
 });
