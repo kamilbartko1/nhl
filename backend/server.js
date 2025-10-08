@@ -43,7 +43,7 @@ function sortByStartTimeAsc(matches) {
 
 app.get("/matches", async (req, res) => {
   try {
-    const url = `https://api.sportradar.com/nhl/trial/v7/en/seasons/${SEASON_ID}/summaries.json?api_key=${API_KEY}`;
+    const url = `https://api.sportradar.com/nhl/trial/v7/en/seasons/${SEASON_ID}/schedules.json?api_key=${API_KEY}`;
     const response = await axios.get(url);
     let matches = response.data.summaries || [];
 
