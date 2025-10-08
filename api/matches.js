@@ -3,6 +3,7 @@ import axios from "axios";
 const API_KEY = "WaNt9YL5305o4hT2iGrsnoxUhegUG0St1ZYcs11g";
 const SEASON_ID = "4a67cca6-b450-45f9-91c6-48e92ac19069"; // Nhl 25/26
 
+// pridavam riadok aby som si oznacil moj jedinecny kod
 // rating – tímy
 const START_RATING = 1500;
 const GOAL_POINTS = 10;
@@ -27,7 +28,7 @@ function sortByStartTimeAsc(matches) {
 
 export default async function handler(req, res) {
   try {
-    const url = `https://api.sportradar.com/nhl/trial/v7/en/games/${SEASON_YEAR}/${SEASON_TYPE}/schedule.json?api_key=${API_KEY}`;
+    const url = `https://api.sportradar.com/nhl/trial/v7/en/games/2025/REG/schedule.json?api_key=${API_KEY}`;
     const response = await axios.get(url);
     const matches = response.data.games || [];
 
