@@ -47,7 +47,7 @@ function sortByStartTimeAsc(matches) {
 app.get("/matches", async (req, res) => {
   try {
     // ✅ OPRAVA: správny endpoint pre NHL schedule
-    const url = `https://api.sportradar.com/nhl/trial/v7/en/games/${SEASON_YEAR}/${SEASON_TYPE}/schedule.json?api_key=${API_KEY}`;
+    const url = `https://api.sportradar.com/nhl/trial/v7/en/games/2025/REG/schedule.json?api_key=${API_KEY}`;
     const response = await axios.get(url);
 
     let matches = response.data.games || [];
