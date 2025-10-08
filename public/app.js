@@ -194,12 +194,17 @@ function displayMantingal() {
   if (!c) return;
   c.innerHTML = "";
 
-  // 🔹 1. vyber len zápasy, ktoré majú hráčske štatistiky a sú ukončené
+  // 🔹 1. vyber len zápasy s akýmikoľvek hráčskymi dátami
   const completed = (allMatches || []).filter(
     (m) =>
       ["closed", "complete", "final"].includes(m.status) &&
       m.statistics &&
-      (m.statistics?.home?.players || m.statistics?.away?.players)
+      (
+        m.statistics?.home?.players ||
+        m.statistics?.away?.players ||
+        m.statistics?.home?.leaders?.points ||
+        m.statistics?.away?.leaders?.points
+      )
   );
 
   if (!completed.length) {
@@ -207,106 +212,78 @@ function displayMantingal() {
     return;
   }
 
-  // 🔹 2. zoradiť zápasy podľa dátumu
+  // 🔹 2. zoradiť podľa dátumu
   completed.sort((a, b) => new Date(a.scheduled) - new Date(b.scheduled));
 
-  // 🔹 3. priebežný rating hráčov
+  // 🔹 3. priebežný rating
   const ratingSoFar = { ...playerRatings };
-  const initRating = (name) => {
-    if (ratingSoFar[name] == null) ratingSoFar[name] = 1500;
-  };
+  const initRating = (n) => (ratingSoFar[n] ??= 1500);
 
   // 🔹 4. stav Mantingalu
   const state = {};
-  const ensureState = (name) => {
-    if (!state[name]) {
-      state[name] = {
-        stake: BASE_STAKE,
-        totalStakes: 0,
-        totalWins: 0,
-        lastResult: "⌛ čaká",
-        log: [],
-      };
-    }
-    return state[name];
-  };
+  const ensureState = (n) => (state[n] ??= { stake: BASE_STAKE, totalStakes: 0, totalWins: 0, lastResult: "—", log: [] });
 
-  // 🔹 5. prechádzame zápasy po jednom – podľa dátumu
+  // 🔹 5. prechádzanie zápasov
   for (const match of completed) {
-    // aktuálna TOP3 podľa priebežného ratingu
     const top3 = Object.entries(ratingSoFar)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3)
-      .map(([name]) => name);
+      .map(([n]) => n);
 
-    // hráči z aktuálneho zápasu
+    // získať hráčov z rôznych štruktúr
     const allPlayers = [];
     ["home", "away"].forEach((side) => {
       const team = match.statistics?.[side];
-      if (Array.isArray(team?.players)) allPlayers.push(...team.players);
+      if (!team) return;
+      if (Array.isArray(team.players)) allPlayers.push(...team.players);
+      if (Array.isArray(team.leaders?.points)) allPlayers.push(...team.leaders.points);
     });
 
-    // vyhodnotenie zápasu pre TOP3
+    // spracovanie pre top3
     for (const playerName of top3) {
-      const player = allPlayers.find(
-        (p) =>
-          p.full_name === playerName ||
-          p.name === playerName ||
-          `${p.first_name} ${p.last_name}`.trim() === playerName
+      const p = allPlayers.find(
+        (pl) =>
+          pl.full_name === playerName ||
+          pl.name === playerName ||
+          `${pl.first_name || ""} ${pl.last_name || ""}`.trim() === playerName
       );
-
-      if (!player) continue; // tento hráč nehral
+      if (!p) continue;
 
       const s = ensureState(playerName);
       const stakeBefore = s.stake;
       s.totalStakes += stakeBefore;
+      const goals = p.statistics?.total?.goals || 0;
 
-      const goals = player.statistics?.total?.goals || 0;
       if (goals > 0) {
-        // výhra
-        const winAmount = stakeBefore * ODDS;
-        s.totalWins += winAmount;
+        const win = stakeBefore * ODDS;
+        s.totalWins += win;
         s.stake = BASE_STAKE;
         s.lastResult = "✅ výhra";
-        s.log.push({
-          date: new Date(match.scheduled).toISOString().slice(0, 10),
-          goals,
-          stake_before: stakeBefore,
-          result: "výhra",
-          win_amount: winAmount.toFixed(2),
-          new_stake: s.stake,
-        });
       } else {
-        // prehra
         s.stake *= 2;
         s.lastResult = "❌ prehra";
-        s.log.push({
-          date: new Date(match.scheduled).toISOString().slice(0, 10),
-          goals,
-          stake_before: stakeBefore,
-          result: "prehra",
-          win_amount: 0,
-          new_stake: s.stake,
-        });
       }
+
+      s.log.push({
+        date: new Date(match.scheduled).toISOString().slice(0, 10),
+        goals,
+        stake_before: stakeBefore,
+        result: s.lastResult,
+        new_stake: s.stake,
+      });
     }
 
-    // po zápase aktualizuj ratingy podľa výkonov všetkých hráčov
-    for (const p of allPlayers) {
-      const name =
-        p.full_name || p.name || `${p.first_name || ""} ${p.last_name || ""}`.trim();
+    // aktualizuj ratingy
+    for (const pl of allPlayers) {
+      const name = pl.full_name || pl.name || `${pl.first_name || ""} ${pl.last_name || ""}`.trim();
       initRating(name);
       ratingSoFar[name] +=
-        (p.statistics?.total?.goals || 0) * 20 +
-        (p.statistics?.total?.assists || 0) * 10;
+        (pl.statistics?.total?.goals || 0) * 20 +
+        (pl.statistics?.total?.assists || 0) * 10;
     }
   }
 
-  // 🔹 6. finálne zhrnutie
-  const currentTop3 = Object.entries(ratingSoFar)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3);
-
+  // 🔹 6. výstup
   const totals = Object.values(state).reduce(
     (acc, s) => {
       acc.stakes += s.totalStakes;
@@ -315,10 +292,12 @@ function displayMantingal() {
     },
     { stakes: 0, wins: 0 }
   );
-
   const profit = totals.wins - totals.stakes;
 
-  // 🔹 7. render
+  const currentTop3 = Object.entries(ratingSoFar)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3);
+
   const table = document.createElement("table");
   table.innerHTML = `
     <thead>
@@ -328,55 +307,44 @@ function displayMantingal() {
     <tbody>
       ${currentTop3
         .map(([name]) => {
-          const s = state[name] || { stake: BASE_STAKE, lastResult: "⌛ čaká", log: [] };
+          const s = state[name] || { stake: BASE_STAKE, lastResult: "—", log: [] };
           const logId = `log-${slug(name)}`;
-          const logHtml = s.log.length
-            ? s.log
-                .map(
-                  (e) => `
-              <div>
-                <b>${e.date}</b> – stake: ${e.stake_before} €, góly: ${e.goals}, ${e.result},
-                výhra: ${e.win_amount} €, nový stake: ${e.new_stake} €
-              </div>`
-                )
-                .join("")
-            : "<div>Žiadne zápasy odohraté</div>";
-
+          const logHtml =
+            s.log.length > 0
+              ? s.log
+                  .map(
+                    (e) =>
+                      `<div><b>${e.date}</b> – ${e.result}, stake: ${e.stake_before} €, góly: ${e.goals}, nový stake: ${e.new_stake} €</div>`
+                  )
+                  .join("")
+              : "<div>Žiadne zápasy</div>";
           return `
             <tr>
-              <td>${name}</td>
-              <td>${ODDS}</td>
-              <td>${s.stake} €</td>
-              <td>${s.lastResult}</td>
+              <td>${name}</td><td>${ODDS}</td><td>${s.stake} €</td><td>${s.lastResult}</td>
               <td><button class="btn-log" data-target="${logId}">📜</button></td>
             </tr>
             <tr id="${logId}" style="display:none;">
-              <td colspan="5" style="text-align:left;">${logHtml}</td>
+              <td colspan="5">${logHtml}</td>
             </tr>`;
         })
         .join("")}
-    </tbody>
-  `;
+    </tbody>`;
   c.appendChild(table);
 
   const summary = document.createElement("div");
   summary.innerHTML = `
     <p><b>Celkové stávky:</b> ${totals.stakes.toFixed(2)} €</p>
     <p><b>Výhry:</b> ${totals.wins.toFixed(2)} €</p>
-    <p><b>Profit:</b> ${profit.toFixed(2)} €</p>
-  `;
+    <p><b>Profit:</b> ${profit.toFixed(2)} €</p>`;
   c.appendChild(summary);
 
-  // 🧭 interaktívne rozbaľovanie denníkov
-  table.querySelectorAll(".btn-log").forEach((btn) => {
+  table.querySelectorAll(".btn-log").forEach((btn) =>
     btn.addEventListener("click", () => {
-      const target = document.getElementById(btn.dataset.target);
-      if (target)
-        target.style.display = target.style.display === "none" ? "" : "none";
-    });
-  });
+      const t = document.getElementById(btn.dataset.target);
+      if (t) t.style.display = t.style.display === "none" ? "" : "none";
+    })
+  );
 
-  // pre mobilné zobrazenie
   if (isMobile()) c.style.display = "block";
 }
 
