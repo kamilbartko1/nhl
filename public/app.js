@@ -442,7 +442,7 @@ function displayMatches(matches) {
         }
 
         try {
-          const endpoint = `${API_BASE}/api/team/match-details?gameId=${encodeURIComponent(
+          const endpoint = `${API_BASE}/api/match-details?gameId=${encodeURIComponent(
             match.id
           )}`;
           const response = await fetch(endpoint);
@@ -518,7 +518,7 @@ function displayTeamRatings() {
 
       try {
         // Pozn.: /api/team/:id endpoint si môžeš dorobiť podľa potreby
-        const resp = await fetch(`${API_BASE}/api/team/${encodeURIComponent(id)}`);
+        const resp = await fetch(`${API_BASE}/api/${encodeURIComponent(id)}`);
         if (!resp.ok) {
           // ak endpoint nemáš, len to ticho preskočíme
           console.warn("Endpoint /api/team/:id nie je k dispozícii.");
