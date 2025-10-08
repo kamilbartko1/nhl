@@ -47,13 +47,21 @@ function setupMobileSectionsOnLoad() {
   }
 
   select.addEventListener("change", () => {
-  if (isMobile()) {
-    if (select.value === "mantingal") {
-      document.getElementById("mantingal-container").style.display = "block";
-      displayMantingal();
-    } else {
-      document.getElementById("mantingal-container").style.display = "none";
-    }
+  const selected = select.value;
+
+  // Skry všetky sekcie
+  document.querySelectorAll(".section").forEach(sec => sec.style.display = "none");
+  const mantingalContainer = document.getElementById("mantingal-container");
+
+  if (selected === "mantingal") {
+    // Zobraz Mantingal
+    mantingalContainer.style.display = "block";
+    // 🧠 Po krátkej pauze vyrenderuj (aby bol DOM hotový)
+    setTimeout(displayMantingal, 100);
+  } else {
+    mantingalContainer.style.display = "none";
+    const sectionToShow = document.getElementById(`${selected}-section`);
+    if (sectionToShow) sectionToShow.style.display = "block";
   }
 });
 }
@@ -184,6 +192,15 @@ function displayPlayerRatings() {
  * MANTINGAL – simulácia sezóny + DENNÍK (plná logika)
  *************************************************/
 function displayMantingal() {
+  // 🧩 Sekcia Mantingal
+  const c = document.getElementById("mantingal-container");
+
+  // 🧠 Oprava: ak si na mobile, sekcia mohla byť defaultne skrytá
+  if (isMobile()) {
+    c.style.display = "block";
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   // len odohrané zápasy s hráčskymi štatistikami
   const completed = (allMatches || [])
     .filter((m) =>
@@ -200,13 +217,9 @@ function displayMantingal() {
     });
 
   if (!completed.length) {
-  const c = document.getElementById("mantingal-container");
-  c.innerHTML = "<p>Žiadne odohrané zápasy so štatistikami</p>";
-  return;
-}
-
-// v mobile sa Mantingal sekcia môže byť defaultne skrytá – zobraz ju
-if (isMobile()) c.style.display = "block";
+    c.innerHTML = "<p>Žiadne odohrané zápasy so štatistikami</p>";
+    return;
+  }
 
   // zoradiť chronologicky
   completed.sort(
@@ -345,7 +358,6 @@ if (isMobile()) c.style.display = "block";
   const profit = totals.wins - totals.stakes;
 
   // render
-  const c = document.getElementById("mantingal-container");
   c.innerHTML = "";
 
   const table = document.createElement("table");
@@ -405,11 +417,3 @@ if (isMobile()) c.style.display = "block";
   });
 }
 
-/*************************************************
- * 
- * 
- *************************************************/
-window.addEventListener("DOMContentLoaded", () => {
-  setupMobileSectionsOnLoad();
-  fetchMatches();
-});
