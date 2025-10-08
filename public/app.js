@@ -47,12 +47,15 @@ function setupMobileSectionsOnLoad() {
   }
 
   select.addEventListener("change", () => {
-    if (isMobile()) {
-      sections.forEach((s) => (s.style.display = "none"));
-      document.getElementById(`${select.value}-section`).style.display = "block";
-      if (select.value === "mantingal") displayMantingal();
+  if (isMobile()) {
+    if (select.value === "mantingal") {
+      document.getElementById("mantingal-container").style.display = "block";
+      displayMantingal();
+    } else {
+      document.getElementById("mantingal-container").style.display = "none";
     }
-  });
+  }
+});
 }
 
 /*************************************************
@@ -197,10 +200,13 @@ function displayMantingal() {
     });
 
   if (!completed.length) {
-    const c = document.getElementById("mantingal-container");
-    c.innerHTML = "<p>Žiadne odohrané zápasy so štatistikami</p>";
-    return;
-  }
+  const c = document.getElementById("mantingal-container");
+  c.innerHTML = "<p>Žiadne odohrané zápasy so štatistikami</p>";
+  return;
+}
+
+// v mobile sa Mantingal sekcia môže byť defaultne skrytá – zobraz ju
+if (isMobile()) c.style.display = "block";
 
   // zoradiť chronologicky
   completed.sort(
