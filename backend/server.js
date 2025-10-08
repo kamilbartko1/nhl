@@ -11,10 +11,9 @@ const PORT = 3000;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// --- konfigurácia pre NHL ---
+// --- konfigurácia pre NHL 2025–26 ---
 const API_KEY = "WaNt9YL5305o4hT2iGrsnoxUhegUG0St1ZYcs11g";
-const SEASON_YEAR = 2025; // NHL 2025/26 Regular Season
-const SEASON_TYPE = "REG"; // Regular Season
+const SEASON_ID = "4a67cca6-b450-45f9-91c6-48e92ac19069"; // NHL 2025–26 regular season
 
 // rating – tímy
 const START_RATING = 1500;
@@ -46,19 +45,18 @@ function sortByStartTimeAsc(matches) {
 // ====================== HLAVNÝ ENDPOINT ======================
 app.get("/matches", async (req, res) => {
   try {
-    // ✅ OPRAVA: správny endpoint pre NHL schedule
-    const url = `https://api.sportradar.com/nhl/trial/v7/en/games/2025/REG/schedule.json?api_key=${API_KEY}`;
+    // ✅ správny endpoint podľa tvojej ukážky
+    const url = `https://api.sportradar.com/nhl/trial/v7/en/seasons/${SEASON_ID}/schedule.json?api_key=${API_KEY}`;
     const response = await axios.get(url);
-
     let matches = response.data.games || [];
 
-    // ✅ vyfiltruj iba odohrané zápasy
+    // ⚡ vyfiltruj len odohrané zápasy
     matches = matches.filter(
-      (m) => m.status === "closed" || m.status === "complete"
+      (m) => m?.status === "closed" || m?.status === "complete"
     );
 
-    // Ak žiadne odohrané – pošli späť prázdne pole
     if (!matches.length) {
+      console.log("⚠️ Žiadne odohrané zápasy v sezóne");
       return res.json({
         matches: [],
         teamRatings: {},
@@ -67,9 +65,25 @@ app.get("/matches", async (req, res) => {
       });
     }
 
+    // 🟢 načítaj detaily zápasov (boxscore)
+    const matchesWithStats = await Promise.all(
+      matches.map(async (m) => {
+        try {
+          const gameId = m.id;
+          const detailsUrl = `https://api.sportradar.com/nhl/trial/v7/en/games/${gameId}/boxscore.json?api_key=${API_KEY}`;
+          const det = await axios.get(detailsUrl);
+          m.statistics = det.data;
+          return m;
+        } catch (e) {
+          console.warn("⚠️ Nepodarilo sa načítať boxscore pre zápas:", m.id);
+          return m;
+        }
+      })
+    );
+
     // --- zoskupiť podľa dátumu ---
     const grouped = {};
-    matches.forEach((m) => {
+    matchesWithStats.forEach((m) => {
       const date = new Date(m.scheduled).toISOString().slice(0, 10);
       if (!grouped[date]) grouped[date] = [];
       grouped[date].push(m);
@@ -78,6 +92,7 @@ app.get("/matches", async (req, res) => {
     const days = Object.keys(grouped).sort((a, b) => new Date(b) - new Date(a));
     let roundCounter = days.length;
     const rounds = [];
+
     for (const day of days) {
       grouped[day].forEach((m) => {
         m.round = roundCounter;
@@ -87,8 +102,8 @@ app.get("/matches", async (req, res) => {
       roundCounter--;
     }
 
-    // --- Výpočty ratingov a mantingalu ---
-    const ordered = sortByStartTimeAsc(matches);
+    // --- výpočty ratingov a mantingalu ---
+    const ordered = sortByStartTimeAsc(matchesWithStats);
     const teamRatings = {};
     const playerRatingsById = {};
     const playerNamesById = {};
@@ -97,17 +112,16 @@ app.get("/matches", async (req, res) => {
     let totalReturn = 0;
 
     const getMatchPlayers = (match) => {
-      const list = [];
-      const comps = match?.statistics?.totals?.competitors || [];
-      comps.forEach((team) => {
-        (team.players || []).forEach((p) => {
-          if (p?.id) {
-            playerNamesById[p.id] = p.name;
-            list.push(p);
-          }
-        });
+      const players = [];
+      const homePlayers = match?.statistics?.home?.players || [];
+      const awayPlayers = match?.statistics?.away?.players || [];
+      [...homePlayers, ...awayPlayers].forEach((p) => {
+        if (p?.id) {
+          playerNamesById[p.id] = p.full_name || p.name;
+          players.push(p);
+        }
       });
-      return list;
+      return players;
     };
 
     for (const match of ordered) {
@@ -159,10 +173,8 @@ app.get("/matches", async (req, res) => {
         }
       });
 
-      const home = match.home;
-      const away = match.away;
-      const homeName = home?.name || "TBD";
-      const awayName = away?.name || "TBD";
+      const homeName = match.home?.name || "TBD";
+      const awayName = match.away?.name || "TBD";
       const homeScore = match.home_points ?? 0;
       const awayScore = match.away_points ?? 0;
 
@@ -179,6 +191,18 @@ app.get("/matches", async (req, res) => {
         teamRatings[awayName] += WIN_POINTS;
         teamRatings[homeName] += LOSS_POINTS;
       }
+
+      matchPlayers.forEach((player) => {
+        const pid = player.id;
+        const name = player.full_name || player.name;
+        if (!pid) return;
+        playerNamesById[pid] = name;
+        if (playerRatingsById[pid] == null)
+          playerRatingsById[pid] = START_RATING;
+        const g = player?.statistics?.goals ?? 0;
+        const a = player?.statistics?.assists ?? 0;
+        playerRatingsById[pid] += g * PLAYER_GOAL_POINTS + a * PLAYER_ASSIST_POINTS;
+      });
     }
 
     const playerRatingsByName = {};
@@ -215,7 +239,7 @@ app.get("/matches", async (req, res) => {
     };
 
     res.json({
-      matches,
+      matches: matchesWithStats,
       rounds,
       teamRatings,
       playerRatings: playerRatingsByName,
@@ -227,6 +251,19 @@ app.get("/matches", async (req, res) => {
   } catch (err) {
     console.error("❌ Chyba pri načítaní NHL zápasov:", err.message);
     res.status(500).json({ error: "Chyba pri načítaní NHL zápasov" });
+  }
+});
+
+// ====================== DETAIL ZÁPASU ======================
+app.get("/match-details/:gameId", async (req, res) => {
+  try {
+    const { gameId } = req.params;
+    const url = `https://api.sportradar.com/nhl/trial/v7/en/games/${gameId}/boxscore.json?api_key=${API_KEY}`;
+    const response = await axios.get(url);
+    res.json(response.data);
+  } catch (err) {
+    console.error("❌ Chyba pri načítaní detailov zápasu:", err.message);
+    res.status(500).json({ error: "Chyba pri načítaní detailov zápasu" });
   }
 });
 
