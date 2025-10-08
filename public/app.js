@@ -217,7 +217,7 @@ function setupMobileSectionsOnLoad() {
  * ========================= */
 async function fetchMatches() {
   try {
-    const response = await fetch(`${API_BASE}/api/matches`);
+    const response = await fetch(`${API_BASE}/api/team/matches`);
     const data = await response.json();
 
     // 🔹 preferuj rounds (iba odohrané a zoradené kolá)
@@ -442,7 +442,7 @@ function displayMatches(matches) {
         }
 
         try {
-          const endpoint = `${API_BASE}/api/match-details?gameId=${encodeURIComponent(
+          const endpoint = `${API_BASE}/api/team/match-details?gameId=${encodeURIComponent(
             match.id
           )}`;
           const response = await fetch(endpoint);
