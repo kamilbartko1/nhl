@@ -190,7 +190,10 @@ function displayMatches(matches) {
   tableBody.innerHTML = "";
 
   // 🔹 iba odohrané zápasy
-  const completed = matches.filter(m => m.status === "closed" || m.status === "ap");
+  const completed = matches.filter(
+  m => m.status === "closed" || m.status === "ap" || m.status === "complete"
+);
+
 
   if (completed.length === 0) {
     tableBody.innerHTML = `<tr><td colspan="4">Žiadne odohrané zápasy</td></tr>`;
