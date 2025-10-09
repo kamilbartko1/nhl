@@ -1,4 +1,3 @@
-// backend/server.js
 import express from "express";
 import axios from "axios";
 import cors from "cors";
@@ -8,7 +7,7 @@ import { fileURLToPath } from "url";
 const app = express();
 const PORT = 3000;
 
-// pre __dirname (v ES modules)
+// fix __dirname pre ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -31,60 +30,54 @@ const START_STAKE = 1;
 
 app.use(cors());
 app.use(express.json());
-
-// sprístupní frontend
 app.use(express.static(path.join(__dirname, "../frontend")));
 
-// pomocná funkcia – načítanie hráčov z boxscore
-function extractPlayersFromBoxscore(box) {
-  const result = [];
-  if (!box) return result;
-
-  const teams = [box.home, box.away];
-  for (const t of teams) {
-    if (!Array.isArray(t?.players)) continue;
-    for (const p of t.players) {
+/**
+ * Extrahuje hráčov z boxscore (iba home/away.players)
+ */
+function extractPlayers(box) {
+  const list = [];
+  if (!box) return list;
+  [box.home, box.away].forEach((team) => {
+    if (!Array.isArray(team?.players)) return;
+    for (const p of team.players) {
       const name =
         p.full_name ||
         `${p.first_name || ""} ${p.last_name || ""}`.trim();
       const goals = p?.statistics?.total?.goals ?? 0;
       const assists = p?.statistics?.total?.assists ?? 0;
-      if (name) result.push({ name, goals, assists });
+      if (name) list.push({ name, goals, assists });
     }
-  }
-
-  // odstráni duplicity a spočíta góly/asistencie
-  const unique = {};
-  result.forEach((p) => {
-    if (!unique[p.name]) unique[p.name] = { goals: 0, assists: 0 };
-    unique[p.name].goals += p.goals;
-    unique[p.name].assists += p.assists;
   });
-  return Object.entries(unique).map(([name, v]) => ({ name, ...v }));
+  // zlúči duplicity (ak sa hráč opakuje)
+  const merged = {};
+  for (const p of list) {
+    if (!merged[p.name]) merged[p.name] = { goals: 0, assists: 0 };
+    merged[p.name].goals += p.goals;
+    merged[p.name].assists += p.assists;
+  }
+  return Object.entries(merged).map(([name, v]) => ({ name, ...v }));
 }
 
-// zoradenie zápasov podľa času
-function sortByStartTimeAsc(matches) {
-  return [...matches].sort(
-    (a, b) => new Date(a.scheduled) - new Date(b.scheduled)
-  );
-}
+/** zoradenie zápasov podľa času */
+const sortByTime = (arr) => [...arr].sort((a, b) => new Date(a.scheduled) - new Date(b.scheduled));
 
 // ====================== ENDPOINTY ======================
 
-// všetky zápasy + ratingy + Mantingal simulácia
-app.get("/matches", async (req, res) => {
+// hlavný endpoint
+app.get("/api/matches", async (req, res) => {
   try {
-    const url = `https://api.sportradar.com/nhl/trial/v7/en/seasons/4a67cca6-b450-45f9-91c6-48e92ac19069/schedule.json?api_key=${API_KEY}`;
-    const response = await axios.get(url);
-    let matches = response.data.games || [];
+    // 🟩 Načítaj rozpis zápasov
+    const scheduleUrl = `https://api.sportradar.com/nhl/trial/v7/en/seasons/4a67cca6-b450-45f9-91c6-48e92ac19069/schedule.json?api_key=${API_KEY}`;
+    const r = await axios.get(scheduleUrl);
+    let matches = r.data.games || [];
 
-    // len odohrané zápasy
+    // filtrujeme len ukončené zápasy
     matches = matches.filter((m) =>
       ["closed", "complete", "final"].includes(m.status)
     );
 
-    // načítanie boxscore pre každý zápas
+    // 🟩 Načítaj boxscore pre každý zápas
     const matchesWithStats = await Promise.all(
       matches.map(async (m) => {
         try {
@@ -98,78 +91,73 @@ app.get("/matches", async (req, res) => {
       })
     );
 
-    // === Inicializácia ===
     const teamRatings = {};
     const playerRatings = {};
-    const mantingalState = {};
+    const mantingal = {};
     let totalStaked = 0;
-    let totalWin = 0;
+    let totalWon = 0;
 
-    const ordered = sortByStartTimeAsc(matchesWithStats);
+    const ordered = sortByTime(matchesWithStats);
 
-    // === Spracovanie zápasov po jednom ===
+    // 🟩 Prejdi každý zápas
     for (const match of ordered) {
-      const players = extractPlayersFromBoxscore(match.statistics);
+      const players = extractPlayers(match.statistics);
 
       // --- RATING HRÁČOV ---
       for (const p of players) {
         if (!playerRatings[p.name]) playerRatings[p.name] = START_RATING;
-        playerRatings[p.name] +=
-          p.goals * PLAYER_GOAL_POINTS + p.assists * PLAYER_ASSIST_POINTS;
+        playerRatings[p.name] += p.goals * PLAYER_GOAL_POINTS + p.assists * PLAYER_ASSIST_POINTS;
       }
 
       // --- RATING TÍMOV ---
-      const homeName = match.home?.name || "Domáci";
-      const awayName = match.away?.name || "Hostia";
-      const homeScore = match.home_points ?? 0;
-      const awayScore = match.away_points ?? 0;
+      const home = match.home?.name || "Domáci";
+      const away = match.away?.name || "Hostia";
+      const hs = match.home_points ?? 0;
+      const as = match.away_points ?? 0;
 
-      if (!teamRatings[homeName]) teamRatings[homeName] = START_RATING;
-      if (!teamRatings[awayName]) teamRatings[awayName] = START_RATING;
+      if (!teamRatings[home]) teamRatings[home] = START_RATING;
+      if (!teamRatings[away]) teamRatings[away] = START_RATING;
 
-      teamRatings[homeName] += homeScore * GOAL_POINTS - awayScore * GOAL_POINTS;
-      teamRatings[awayName] += awayScore * GOAL_POINTS - homeScore * GOAL_POINTS;
+      teamRatings[home] += hs * GOAL_POINTS - as * GOAL_POINTS;
+      teamRatings[away] += as * GOAL_POINTS - hs * GOAL_POINTS;
 
-      if (homeScore > awayScore) {
-        teamRatings[homeName] += WIN_POINTS;
-        teamRatings[awayName] += LOSS_POINTS;
-      } else if (awayScore > homeScore) {
-        teamRatings[awayName] += WIN_POINTS;
-        teamRatings[homeName] += LOSS_POINTS;
+      if (hs > as) {
+        teamRatings[home] += WIN_POINTS;
+        teamRatings[away] += LOSS_POINTS;
+      } else if (as > hs) {
+        teamRatings[away] += WIN_POINTS;
+        teamRatings[home] += LOSS_POINTS;
       }
 
-      // --- Mantingal po každom zápase ---
+      // --- MANTINGAL ---
       const top3 = Object.entries(playerRatings)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 3)
-        .map(([name]) => name);
+        .map(([n]) => n);
 
       for (const name of top3) {
-        const p = players.find((pl) => pl.name === name);
-        if (!mantingalState[name])
-          mantingalState[name] = { stake: START_STAKE, totalStake: 0, totalWin: 0 };
-
-        const s = mantingalState[name];
+        const s = mantingal[name] || { stake: START_STAKE, totalStake: 0, totalWin: 0 };
+        const p = players.find((x) => x.name === name);
         if (p) {
           s.totalStake += s.stake;
           totalStaked += s.stake;
-
           if (p.goals > 0) {
             const win = s.stake * ODDS;
             s.totalWin += win;
-            totalWin += win;
+            totalWon += win;
             s.stake = START_STAKE;
           } else {
             s.stake *= 2;
           }
         }
+        mantingal[name] = s;
       }
     }
 
     const martingaleSummary = {
-      totalStaked: Number(totalStaked.toFixed(2)),
-      totalReturn: Number(totalWin.toFixed(2)),
-      profit: Number((totalWin - totalStaked).toFixed(2)),
+      totalStaked: totalStaked.toFixed(2),
+      totalReturn: totalWon.toFixed(2),
+      profit: (totalWon - totalStaked).toFixed(2),
       odds: ODDS,
     };
 
@@ -180,24 +168,23 @@ app.get("/matches", async (req, res) => {
       martingale: { summary: martingaleSummary },
     });
   } catch (err) {
-    console.error("❌ Chyba pri načítaní zápasov:", err.message);
-    res.status(500).json({ error: "Chyba pri načítaní zápasov" });
+    console.error("❌ Chyba:", err.message);
+    res.status(500).json({ error: "Nepodarilo sa načítať zápasy" });
   }
 });
 
 // detail zápasu
-app.get("/match-details/:gameId", async (req, res) => {
+app.get("/api/match-details", async (req, res) => {
   try {
-    const { gameId } = req.params;
+    const { gameId } = req.query;
     const url = `https://api.sportradar.com/nhl/trial/v7/en/games/${gameId}/boxscore.json?api_key=${API_KEY}`;
     const r = await axios.get(url);
     res.json(r.data);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ error: "Chyba pri načítaní detailov zápasu" });
+  } catch {
+    res.status(500).json({ error: "Chyba pri načítaní detailu zápasu" });
   }
 });
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ Server beží na http://localhost:${PORT}`);
-});
+app.listen(PORT, "0.0.0.0", () =>
+  console.log(`✅ Server beží na http://localhost:${PORT}`)
+);
