@@ -67,7 +67,7 @@ function extractPlayers(box) {
 // ==================== ENDPOINT ====================
 app.get("/api/matches", async (req, res) => {
   try {
-    const scheduleUrl = `https://api.sportradar.com/nhl/trial/v7/en/seasons/${SEASON_ID}/schedule.json?api_key=${API_KEY}`;
+    const scheduleUrl = `https://api.sportradar.com/nhl/trial/v7/en/games/2025/REG/schedule.json/?api_key=${API_KEY}`;
     const r = await axios.get(scheduleUrl);
     let matches = r.data.games || [];
 
