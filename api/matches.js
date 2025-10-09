@@ -18,64 +18,101 @@ const PLAYER_ASSIST_POINTS = 10;
 const MANTINGALE_ODDS = 2.5;
 const MANTINGALE_START_STAKE = 1;
 
-/** Pomocná funkcia – zoradenie zápasov podľa času. */
+/**
+ * Pomocná funkcia – zoradenie zápasov podľa času.
+ */
 function sortByStartTimeAsc(matches) {
-  return [...matches].sort(
-    (a, b) => new Date(a.scheduled) - new Date(b.scheduled)
-  );
+  return [...matches].sort((a, b) => {
+    const ta = new Date(a.scheduled).getTime() || 0;
+    const tb = new Date(b.scheduled).getTime() || 0;
+    return ta - tb;
+  });
 }
 
-/** 🧩 Extrakcia hráčov z boxscore (iba players, bez leaders) */
+/**
+ * 🧩 Extrakcia hráčov z boxscore (NHL v7)
+ * Vracia: [{id, name, goals, assists}]
+ */
 function extractPlayersFromBoxscore(box) {
   const players = [];
   if (!box) return players;
 
   const teams = [box.home, box.away];
   for (const team of teams) {
-    if (!Array.isArray(team?.players)) continue;
+    if (!team) continue;
 
-    team.players.forEach((p) => {
-      const id =
-        p.id ||
-        p.sr_id ||
-        p.reference ||
-        p.full_name ||
-        `${p.first_name} ${p.last_name}`;
-      const name =
-        p.full_name ||
-        `${p.first_name || ""} ${p.last_name || ""}`.trim();
-      const stats = p.statistics?.total || {};
-      const goals = stats.goals ?? 0;
-      const assists = stats.assists ?? 0;
-      if (id && name) players.push({ id, name, goals, assists });
-    });
+    // 1️⃣ Leaders sekcia (napr. home.leaders.points)
+    const leaders = team.leaders || {};
+    for (const cat of Object.keys(leaders)) {
+      const list = leaders[cat];
+      if (Array.isArray(list)) {
+        list.forEach((p) => {
+          const id =
+            p.id ||
+            p.sr_id ||
+            p.reference ||
+            p.full_name ||
+            `${p.first_name} ${p.last_name}`;
+          const name = p.full_name || `${p.first_name || ""} ${p.last_name || ""}`.trim();
+          const goals = p.statistics?.total?.goals ?? 0;
+          const assists = p.statistics?.total?.assists ?? 0;
+          if (id && name) {
+            players.push({ id, name, goals, assists });
+          }
+        });
+      }
+    }
+
+    // 2️⃣ Plníme aj zoznam team.players (hlavné štatistiky)
+    if (Array.isArray(team.players)) {
+      team.players.forEach((p) => {
+        const id =
+          p.id ||
+          p.sr_id ||
+          p.reference ||
+          p.full_name ||
+          `${p.first_name} ${p.last_name}`;
+        const name = p.full_name || `${p.first_name || ""} ${p.last_name || ""}`.trim();
+        const goals = p.statistics?.total?.goals ?? 0;
+        const assists = p.statistics?.total?.assists ?? 0;
+        if (id && name) {
+          players.push({ id, name, goals, assists });
+        }
+      });
+    }
   }
 
-  // odstráni duplicity
+  // odstráni duplicity a spočíta góly/asistencie
   const unique = {};
-  for (const p of players) {
+  players.forEach((p) => {
     if (!unique[p.id]) unique[p.id] = { ...p };
     else {
       unique[p.id].goals += p.goals;
       unique[p.id].assists += p.assists;
     }
-  }
+  });
+
   return Object.values(unique);
 }
 
-/** 🔧 Handler pre endpoint /api/matches */
+/**
+ * 🔧 Handler pre endpoint /api/matches
+ */
 export default async function handler(req, res) {
   try {
     const scheduleUrl = `https://api.sportradar.com/nhl/trial/v7/en/games/2025/REG/schedule.json?api_key=${API_KEY}`;
     const response = await axios.get(scheduleUrl);
     let matches = response.data.games || [];
 
-    // iba ukončené zápasy
-    matches = matches.filter((m) =>
-      ["closed", "complete"].includes(m.status)
+    // filtrovanie odohraných alebo prebiehajúcich zápasov
+    matches = matches.filter(
+      (m) =>
+        m.status === "closed" ||
+        m.status === "complete" ||
+        m.status === "inprogress"
     );
 
-    // načítanie boxscore
+    // načítanie detailov (boxscore) pre každý zápas
     const matchesWithStats = await Promise.all(
       matches.map(async (m) => {
         try {
@@ -83,33 +120,51 @@ export default async function handler(req, res) {
           const det = await axios.get(boxUrl);
           m.statistics = det.data;
           return m;
-        } catch {
+        } catch (err) {
+          console.warn(`⚠️ Nepodarilo sa načítať boxscore pre zápas ${m.id}`);
           return m;
         }
       })
     );
 
-    // --- Výpočty ---
+    // zoskupiť podľa dátumu (iba podľa dňa, nie "kola")
+    const grouped = {};
+    matchesWithStats.forEach((m) => {
+      const date = new Date(m.scheduled).toISOString().slice(0, 10);
+      if (!grouped[date]) grouped[date] = [];
+      grouped[date].push(m);
+    });
+
+    const days = Object.keys(grouped).sort((a, b) => new Date(b) - new Date(a));
+    const rounds = days.map((day) => ({
+      date: day,
+      matches: grouped[day],
+    }));
+
+    // --- Výpočty ratingov a Mantingalu ---
     const ordered = sortByStartTimeAsc(matchesWithStats);
     const teamRatings = {};
     const playerRatingsById = {};
     const playerNamesById = {};
     const martingaleState = new Map();
-
     let totalStaked = 0;
     let totalReturn = 0;
 
     for (const match of ordered) {
+      const status = match?.status;
+      if (status !== "closed" && status !== "complete") continue;
+
+      // získaj hráčov zo zápasu
       const players = extractPlayersFromBoxscore(match.statistics);
 
-      // === RATING HRÁČOV (iba goals + assists) ===
+      // === RATING HRÁČOV ===
       for (const p of players) {
         const pid = p.id;
         const name = p.name;
         if (!pid || !name) continue;
+
         playerNamesById[pid] = name;
-        if (playerRatingsById[pid] == null)
-          playerRatingsById[pid] = START_RATING;
+        if (playerRatingsById[pid] == null) playerRatingsById[pid] = START_RATING;
         playerRatingsById[pid] +=
           p.goals * PLAYER_GOAL_POINTS + p.assists * PLAYER_ASSIST_POINTS;
       }
@@ -142,6 +197,7 @@ export default async function handler(req, res) {
 
       const playerIds = new Set(players.map((p) => p.id));
 
+      // pred zápasom
       currentTop3.forEach((pid) => {
         if (playerIds.has(pid)) {
           if (!martingaleState.has(pid)) {
@@ -154,6 +210,7 @@ export default async function handler(req, res) {
         }
       });
 
+      // vyhodnotenie zápasu
       currentTop3.forEach((pid) => {
         if (!playerIds.has(pid)) return;
         const state = martingaleState.get(pid);
@@ -182,6 +239,7 @@ export default async function handler(req, res) {
       playerRatingsByName[name] = rating;
     }
 
+    // mantingal zhrnutie
     const martingaleSummary = {
       totalStaked: Number(totalStaked.toFixed(2)),
       totalReturn: Number(totalReturn.toFixed(2)),
@@ -191,9 +249,12 @@ export default async function handler(req, res) {
 
     res.status(200).json({
       matches: matchesWithStats,
+      rounds,
       teamRatings,
       playerRatings: playerRatingsByName,
-      martingale: { summary: martingaleSummary },
+      martingale: {
+        summary: martingaleSummary,
+      },
     });
   } catch (err) {
     console.error("❌ Chyba pri načítaní NHL zápasov:", err.message);
