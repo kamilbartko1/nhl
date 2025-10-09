@@ -185,170 +185,157 @@ function displayPlayerRatings() {
 }
 
 /*************************************************
- * MANTINGAL – NHL kontinuálny po každom zápase
- * - pracuje len s UKONČENÝMI zápasmi
- * - ratingy: gól = +20, asistencia = +10
- * - žiadne duplicity z boxscore
+ * MANTINGAL – simulácia sezóny + DENNÍK (plná logika)
  *************************************************/
 function displayMantingal() {
-  const completed = (allMatches || [])
-    .filter(m => ["closed", "complete", "final"].includes(m?.status))
-    .filter(m => {
-      const s = m?.statistics || {};
-      return Boolean(
-        s?.home?.players || s?.away?.players ||
-        s?.home?.leaders?.points || s?.away?.leaders?.points
-      );
-    })
-    .slice();
-
   const c = document.getElementById("mantingal-container");
+  if (!c) return;
+
+  const completed = (allMatches || [])
+    .filter((m) => ["closed", "complete", "final"].includes(m.status))
+    .filter((m) => {
+      const hasPlayers =
+        m.statistics &&
+        (m.statistics?.home?.leaders?.points ||
+         m.statistics?.away?.leaders?.points ||
+         m.statistics?.home?.players ||
+         m.statistics?.away?.players);
+      return Boolean(hasPlayers);
+    });
+
   if (!completed.length) {
-    if (c) {
-      c.innerHTML = `<div class="notice">Žiadne odohrané zápasy so štatistikami</div>`;
-      if (isMobile()) c.style.display = "block";
-    }
+    c.innerHTML = "<p>Žiadne odohrané zápasy so štatistikami</p>";
+    if (isMobile()) c.style.display = "block";
     return;
   }
 
-  // zoradenie po zápasoch chronologicky
-  completed.sort((a, b) => new Date(a.scheduled) - new Date(b.scheduled));
+  if (isMobile()) c.style.display = "block";
 
-  const R_START = 1500;
-  const GOAL_W = 20;
-  const ASSIST_W = 10;
-  const ratingSoFar = {}; // priebežné ratingy hráčov
-  const initR = (name) => { if (ratingSoFar[name] == null) ratingSoFar[name] = R_START; };
+  completed.sort((a, b) => new Date(a.scheduled) - new Date(b.scheduled));
+  const byDay = {};
+  for (const m of completed) {
+    const d = new Date(m.scheduled).toISOString().slice(0, 10);
+    (byDay[d] ||= []).push(m);
+  }
+  const days = Object.keys(byDay).sort();
+
+  const ratingSoFar = { ...playerRatings };
+  const initRating = (name) => {
+    if (ratingSoFar[name] == null) ratingSoFar[name] = 1500;
+  };
 
   const BASE_STAKE = 1;
   const ODDS = 2.5;
-  const state = {}; // stav mantingalu
+  const state = {};
   const ensureState = (name) => {
     if (!state[name]) {
-      state[name] = { stake: BASE_STAKE, totalStakes: 0, totalWins: 0, lastResult: "—", log: [] };
+      state[name] = {
+        stake: BASE_STAKE,
+        totalStakes: 0,
+        totalWins: 0,
+        lastResult: "—",
+        log: [],
+      };
     }
     return state[name];
   };
 
-  const normName = (p) =>
-    p?.full_name || p?.name || `${p?.first_name || ""} ${p?.last_name || ""}`.trim();
-
-  // 🧩 Pomocná funkcia: unikátni hráči z tímu
-  function collectPlayers(teamNode) {
-    const map = new Map();
-    if (!teamNode) return [];
-    const merge = (p) => {
-      const name = normName(p);
-      if (!name) return;
-      const goals = Number(p?.statistics?.total?.goals ?? p?.statistics?.goals ?? 0);
-      const assists = Number(p?.statistics?.total?.assists ?? p?.statistics?.assists ?? 0);
-      if (!map.has(name)) map.set(name, { name, goals: 0, assists: 0 });
-      const prev = map.get(name);
-      map.set(name, { name, goals: prev.goals + goals, assists: prev.assists + assists });
-    };
-    (teamNode.players || []).forEach(merge);
-    const leaderLists = [
-      ...(teamNode.leaders?.points || []),
-      ...(teamNode.leaders?.goals || []),
-      ...(teamNode.leaders?.assists || []),
-    ];
-    for (const p of leaderLists) {
-      const name = normName(p);
-      if (name && !map.has(name)) merge(p);
-    }
-    return Array.from(map.values());
-  }
-
-  // 🧩 Unikátni hráči z celého zápasu
-  function playersInMatch(match) {
-    const s = match?.statistics || {};
-    const all = [
-      ...collectPlayers(s.home),
-      ...collectPlayers(s.away),
-    ];
-    const merged = {};
-    for (const p of all) {
-      if (!merged[p.name]) merged[p.name] = { goals: 0, assists: 0 };
-      merged[p.name].goals += p.goals;
-      merged[p.name].assists += p.assists;
-    }
-    return Object.entries(merged).map(([name, st]) => ({
-      name,
-      goals: st.goals,
-      assists: st.assists,
-    }));
-  }
-
-  // 🧮 Spracovanie zápasov jeden po druhom
-  for (const match of completed) {
-    const currentTop3 = Object.entries(ratingSoFar)
+  for (const day of days) {
+    const top3 = Object.entries(ratingSoFar)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3)
-      .map(([n]) => n);
+      .map(([name]) => name);
 
-    const plist = playersInMatch(match);
-    const byName = new Map(plist.map(p => [p.name, p]));
+    for (const playerName of top3) {
+      let played = false;
+      let goals = 0;
 
-    // ak niekto z TOP3 hral tento zápas, vyhodnoť stávku
-    for (const name of currentTop3) {
-      if (!byName.has(name)) continue;
-      const p = byName.get(name);
-      const s = ensureState(name);
-      const stakeBefore = s.stake;
-      s.totalStakes += stakeBefore;
+      for (const match of byDay[day]) {
+        const allPlayers = [];
+        const collect = (side) => {
+          const team = match.statistics?.[side];
+          if (!team) return;
+          if (Array.isArray(team.players)) allPlayers.push(...team.players);
+          if (team.leaders?.points) allPlayers.push(...team.leaders.points);
+        };
+        collect("home");
+        collect("away");
 
-      if ((p.goals || 0) > 0) {
-        const winAmount = stakeBefore * ODDS;
-        s.totalWins += winAmount;
-        s.stake = BASE_STAKE;
-        s.lastResult = "✅ výhra";
-        s.log.push({
-          date: new Date(match.scheduled).toISOString().slice(0, 10),
-          stake_before: stakeBefore,
-          goals: p.goals,
-          result: "výhra",
-          win_amount: winAmount.toFixed(2),
-          new_stake: s.stake,
-        });
-      } else {
-        s.stake = stakeBefore * 2;
-        s.lastResult = "❌ prehra";
-        s.log.push({
-          date: new Date(match.scheduled).toISOString().slice(0, 10),
-          stake_before: stakeBefore,
-          goals: 0,
-          result: "prehra",
-          win_amount: 0,
-          new_stake: s.stake,
-        });
+        const player = allPlayers.find(
+          (p) =>
+            p.full_name === playerName ||
+            p.name === playerName ||
+            `${p.first_name} ${p.last_name}`.trim() === playerName
+        );
+        if (player) {
+          played = true;
+          goals += player.statistics?.total?.goals || 0;
+        }
+      }
+
+      if (played) {
+        const s = ensureState(playerName);
+        const stakeBefore = s.stake;
+        s.totalStakes += stakeBefore;
+
+        if (goals > 0) {
+          const win = stakeBefore * ODDS;
+          s.totalWins += win;
+          s.stake = BASE_STAKE;
+          s.lastResult = "✅ výhra";
+          s.log.push({
+            date: day,
+            stake_before: stakeBefore,
+            goals,
+            result: "výhra",
+            win_amount: win.toFixed(2),
+            new_stake: s.stake,
+          });
+        } else {
+          s.stake *= 2;
+          s.lastResult = "❌ prehra";
+          s.log.push({
+            date: day,
+            stake_before: stakeBefore,
+            goals: 0,
+            result: "prehra",
+            win_amount: 0,
+            new_stake: s.stake,
+          });
+        }
       }
     }
 
-    // po zápase aktualizuj rating hráčov podľa výkonu (bez duplicít)
-    const uniquePlayers = playersInMatch(match);
-    for (const p of uniquePlayers) {
-      initR(p.name);
-      ratingSoFar[p.name] += p.goals * GOAL_W + p.assists * ASSIST_W;
+    for (const match of byDay[day]) {
+      const allPlayers = [];
+      ["home", "away"].forEach((side) => {
+        const team = match.statistics?.[side];
+        if (team?.players) allPlayers.push(...team.players);
+      });
+      for (const p of allPlayers) {
+        const name = p.full_name || p.name || `${p.first_name} ${p.last_name}`;
+        initRating(name);
+        ratingSoFar[name] +=
+          (p.statistics?.total?.goals || 0) * 20 +
+          (p.statistics?.total?.assists || 0) * 10;
+      }
     }
   }
 
-  // TOP3 aktuálne podľa ratingov
-  const currentTop3Final = Object.entries(ratingSoFar)
+  const currentTop3 = Object.entries(playerRatings)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3);
 
   const totals = Object.values(state).reduce(
     (acc, s) => {
-      acc.stakes += s.totalStakes || 0;
-      acc.wins += s.totalWins || 0;
+      acc.stakes += s.totalStakes;
+      acc.wins += s.totalWins;
       return acc;
     },
     { stakes: 0, wins: 0 }
   );
   const profit = totals.wins - totals.stakes;
 
-  // RENDER výstupu
-  if (isMobile()) c.style.display = "block";
   c.innerHTML = "";
 
   const table = document.createElement("table");
@@ -358,16 +345,20 @@ function displayMantingal() {
       <tr><th>Hráč</th><th>Kurz</th><th>Vklad</th><th>Posledný výsledok</th><th>Denník</th></tr>
     </thead>
     <tbody>
-      ${currentTop3Final
+      ${currentTop3
         .map(([name]) => {
           const s = state[name] || { stake: BASE_STAKE, lastResult: "—", log: [] };
           const logId = `log-${slug(name)}`;
           const logHtml = s.log.length
-            ? s.log.map(e => `
-                <div>
-                  <b>${e.date}</b> – stake: ${e.stake_before} €, góly: ${e.goals}, ${e.result},
-                  výhra: ${e.win_amount} €, nový stake: ${e.new_stake} €
-                </div>`).join("")
+            ? s.log
+                .map(
+                  (e) => `
+              <div>
+                <b>${e.date}</b> – stake: ${e.stake_before} €, góly: ${e.goals},
+                ${e.result}, výhra: ${e.win_amount} €, nový stake: ${e.new_stake} €
+              </div>`
+                )
+                .join("")
             : "<div>Denník je prázdny</div>";
           return `
             <tr>
@@ -394,14 +385,14 @@ function displayMantingal() {
   `;
   c.appendChild(summary);
 
-  table.querySelectorAll(".btn-log").forEach(btn => {
+  table.querySelectorAll(".btn-log").forEach((btn) => {
     btn.addEventListener("click", () => {
       const target = document.getElementById(btn.dataset.target);
-      if (target) target.style.display = target.style.display === "none" ? "" : "none";
+      if (target)
+        target.style.display = target.style.display === "none" ? "" : "none";
     });
   });
 }
-
 
 /*************************************************
  * ŠTART CELEJ APPKY
