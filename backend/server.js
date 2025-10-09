@@ -1,4 +1,3 @@
-// backend/server.js
 import express from "express";
 import axios from "axios";
 import cors from "cors";
@@ -55,7 +54,7 @@ app.get("/matches", async (req, res) => {
 
     // ⚡ filter: len odohrané zápasy
     matches = matches.filter(
-      (m) => m.status === "closed" || m.status === "complete" || m.status === "inprogress"
+      (m) => m.status === "closed" || m.status === "complete"
     );
 
     // 🟢 doplň detailné štatistiky (boxscore) pre každý zápas
@@ -103,17 +102,23 @@ app.get("/matches", async (req, res) => {
     const playerRatingsById = {};
     const playerNamesById = {};
     const martingaleState = new Map();
+
     let totalStaked = 0;
     let totalReturn = 0;
 
+    // pomocná funkcia – získa hráčov z boxscore
     const getMatchPlayers = (match) => {
       const list = [];
-      const comps =
-        match?.statistics?.statistics?.teams || match?.statistics?.team || [];
+      const comps = [
+        match?.statistics?.home,
+        match?.statistics?.away,
+      ].filter(Boolean);
+
       comps.forEach((team) => {
         (team.players || []).forEach((p) => {
           if (p?.id) {
-            playerNamesById[p.id] = p.full_name || p.name || "";
+            playerNamesById[p.id] =
+              p.full_name || p.name || `${p.first_name || ""} ${p.last_name || ""}`.trim();
             list.push(p);
           }
         });
@@ -125,34 +130,41 @@ app.get("/matches", async (req, res) => {
       const status = match?.status;
       if (status !== "closed" && status !== "complete") continue;
 
-      const currentTop3 = Object.entries(playerRatingsById)
+      // === Mantingal: aktuálna TOP10 podľa dovtedajších ratingov ===
+      const currentTop10 = Object.entries(playerRatingsById)
         .sort((a, b) => b[1] - a[1])
-        .slice(0, 3)
+        .slice(0, 10)
         .map(([id]) => id);
 
       const matchPlayers = getMatchPlayers(match);
       const playersInMatchIds = new Set(matchPlayers.map((p) => p.id));
 
-      currentTop3.forEach((pid) => {
+      // --- STÁVKY: iba ak hráč z TOP10 hral tento zápas ---
+      currentTop10.forEach((pid) => {
         if (playersInMatchIds.has(pid)) {
           if (!martingaleState.has(pid)) {
             martingaleState.set(pid, {
               stake: MANTINGALE_START_STAKE,
               lastOutcome: null,
+              active: true,
             });
+          } else {
+            martingaleState.get(pid).active = true;
           }
           const state = martingaleState.get(pid);
           totalStaked += state.stake;
         }
       });
 
+      // --- GÓLY ---
       const goalsById = new Map();
       matchPlayers.forEach((p) => {
-        const g = p?.statistics?.goals ?? 0;
+        const g = p?.statistics?.total?.goals ?? p?.statistics?.goals ?? 0;
         if (g > 0) goalsById.set(p.id, g);
       });
 
-      currentTop3.forEach((pid) => {
+      // --- VYHODNOTENIE STÁVOK ---
+      currentTop10.forEach((pid) => {
         if (!playersInMatchIds.has(pid)) return;
         const state = martingaleState.get(pid);
         const scored = goalsById.has(pid);
@@ -161,15 +173,18 @@ app.get("/matches", async (req, res) => {
           martingaleState.set(pid, {
             stake: MANTINGALE_START_STAKE,
             lastOutcome: "win",
+            active: true,
           });
         } else {
           martingaleState.set(pid, {
             stake: state.stake * 2,
             lastOutcome: "loss",
+            active: true,
           });
         }
       });
 
+      // --- RATING TÍMOV ---
       const homeName = match.home?.name || "Domáci";
       const awayName = match.away?.name || "Hostia";
       const homeScore = match.home_points ?? 0;
@@ -189,22 +204,31 @@ app.get("/matches", async (req, res) => {
         teamRatings[homeName] += LOSS_POINTS;
       }
 
-      const comps =
-        match?.statistics?.statistics?.teams || match?.statistics?.team || [];
+      // --- RATING HRÁČOV ---
+      const comps = [match?.statistics?.home, match?.statistics?.away].filter(Boolean);
       comps.forEach((team) => {
         (team.players || []).forEach((player) => {
           const pid = player.id;
           const name = player.full_name || player.name;
           if (!pid) return;
           playerNamesById[pid] = name;
-          if (playerRatingsById[pid] == null)
-            playerRatingsById[pid] = START_RATING;
-          const g = player?.statistics?.goals ?? 0;
-          const a = player?.statistics?.assists ?? 0;
-          playerRatingsById[pid] +=
-            g * PLAYER_GOAL_POINTS + a * PLAYER_ASSIST_POINTS;
+          if (playerRatingsById[pid] == null) playerRatingsById[pid] = START_RATING;
+          const g = player?.statistics?.total?.goals ?? player?.statistics?.goals ?? 0;
+          const a = player?.statistics?.total?.assists ?? player?.statistics?.assists ?? 0;
+          playerRatingsById[pid] += g * PLAYER_GOAL_POINTS + a * PLAYER_ASSIST_POINTS;
         });
       });
+
+      // hráči, ktorí už NIE sú v TOP10, ale boli, sa deaktivujú (pauza stávok)
+      for (const [pid, st] of martingaleState.entries()) {
+        if (!currentTop10.includes(pid)) {
+          martingaleState.set(pid, {
+            stake: MANTINGALE_START_STAKE,
+            lastOutcome: st.lastOutcome,
+            active: false,
+          });
+        }
+      }
     }
 
     const playerRatingsByName = {};
@@ -213,22 +237,24 @@ app.get("/matches", async (req, res) => {
       playerRatingsByName[name] = rating;
     });
 
-    const nowTop3Ids = Object.entries(playerRatingsById)
+    const nowTop10Ids = Object.entries(playerRatingsById)
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
+      .slice(0, 10)
       .map(([id]) => id);
 
-    const martingaleTop3 = nowTop3Ids.map((pid) => {
+    const martingaleTop10 = nowTop10Ids.map((pid) => {
       const state =
         martingaleState.get(pid) || {
           stake: MANTINGALE_START_STAKE,
           lastOutcome: null,
+          active: true,
         };
       return {
         id: pid,
         name: playerNamesById[pid] || pid,
         stake: state.stake,
         lastOutcome: state.lastOutcome,
+        active: state.active,
         odds: MANTINGALE_ODDS,
       };
     });
@@ -246,12 +272,12 @@ app.get("/matches", async (req, res) => {
       teamRatings,
       playerRatings: playerRatingsByName,
       martingale: {
-        top3: martingaleTop3,
+        top10: martingaleTop10,
         summary: martingaleSummary,
       },
     });
   } catch (err) {
-    console.error(err.message);
+    console.error("❌ Chyba pri načítaní zápasov:", err.message);
     res.status(500).json({ error: "Chyba pri načítaní zápasov" });
   }
 });
@@ -271,5 +297,5 @@ app.get("/match-details/:gameId", async (req, res) => {
 
 // ====================== SERVER START ======================
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server beží na http://localhost:${PORT}`);
+  console.log(`✅ Server beží na http://localhost:${PORT}`);
 });
