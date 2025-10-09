@@ -50,7 +50,7 @@ function sortByStartTimeAsc(matches) {
 // všetky zápasy + ratingy + Mantingal simulácia
 app.get("/matches", async (req, res) => {
   try {
-    const url = `https://api.sportradar.com/nhl/trial/v7/en/seasons/${SEASON_ID}/schedule.json?api_key=${API_KEY}`;
+    const url = `https://api.sportradar.com/nhl/trial/v7/en/games/2025/REG/schedule.json?api_key=${API_KEY}`;
     const response = await axios.get(url);
     let matches = response.data.games || [];
 
