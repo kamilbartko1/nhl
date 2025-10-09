@@ -227,25 +227,34 @@ function displayMantingal() {
     p?.full_name || p?.name || `${p?.first_name || ""} ${p?.last_name || ""}`.trim();
 
   const collectPlayers = (teamNode) => {
-    const arr = [];
-    if (!teamNode) return arr;
+  const map = new Map();
+  if (!teamNode) return [];
 
-    const sources = [
-      ...(teamNode.players || []),
-      ...(teamNode.leaders?.points || []),
-      ...(teamNode.leaders?.goals || []),
-      ...(teamNode.leaders?.assists || []),
-    ];
-
-    for (const p of sources) {
-      const name = normName(p);
-      if (!name) continue;
-      const goals = p.statistics?.total?.goals ?? p.statistics?.goals ?? 0;
-      const assists = p.statistics?.total?.assists ?? p.statistics?.assists ?? 0;
-      arr.push({ name, goals, assists });
-    }
-    return arr;
+  const mergePlayer = (p) => {
+    const name = normName(p);
+    if (!name) return;
+    const goals = Number(p?.statistics?.total?.goals ?? p?.statistics?.goals ?? 0);
+    const assists = Number(p?.statistics?.total?.assists ?? p?.statistics?.assists ?? 0);
+    if (!map.has(name)) map.set(name, { name, goals: 0, assists: 0 });
+    const prev = map.get(name);
+    map.set(name, {
+      name,
+      goals: prev.goals + goals,
+      assists: prev.assists + assists
+    });
   };
+
+  // len hráči (žiadni leaders duplicity)
+  (teamNode.players || []).forEach(mergePlayer);
+
+  // leaders použijeme len ak sa hráč nenachádza v players
+  (teamNode.leaders?.points || []).forEach(p => {
+    const name = normName(p);
+    if (name && !map.has(name)) mergePlayer(p);
+  });
+
+  return Array.from(map.values());
+};
 
   const playersInMatch = (m) => {
     const s = m?.statistics || {};
