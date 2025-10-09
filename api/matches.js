@@ -1,328 +1,219 @@
-// api/matches.js — NHL v7 -> mapovanie do „Extraliga v2“ tvaru (bez zmeny frontendu)
 import axios from "axios";
 
 const API_KEY = "WaNt9YL5305o4hT2iGrsnoxUhegUG0St1ZYcs11g";
 
-// Konštanty na výpočty (rovnaké ako v Extralige)
+// RATING – parametre
 const START_RATING = 1500;
-const GOAL_POINTS = 10;
+const PLAYER_GOAL_POINTS = 20;
+const PLAYER_ASSIST_POINTS = 10;
+const TEAM_GOAL_POINTS = 10;
 const WIN_POINTS = 10;
 const LOSS_POINTS = -10;
 
-const PLAYER_GOAL_POINTS = 20;
-const PLAYER_ASSIST_POINTS = 10;
-
+// MANTINGAL
 const MANTINGALE_ODDS = 2.5;
 const MANTINGALE_START_STAKE = 1;
 
-// Pomocné
-const nhlStatusToExtraliga = (s) => {
-  // NHL: "scheduled" | "inprogress" | "complete" | "closed"
-  if (s === "closed" || s === "complete") return "closed";
-  if (s === "inprogress") return "inprogress";
-  return "scheduled";
-};
+// Pomocné zoradenie zápasov
+const sortByStartTimeAsc = (matches) =>
+  [...matches].sort(
+    (a, b) => new Date(a.scheduled).getTime() - new Date(b.scheduled).getTime()
+  );
 
-const toISODate = (ts) => new Date(ts).toISOString().slice(0, 10);
+// 🔹 Extrakcia hráčov z boxscore presne podľa Sportradar štruktúry
+function extractPlayersFromBoxscore(box) {
+  const players = [];
 
+  // 1️⃣ home.leaders + away.leaders
+  ["home", "away"].forEach((side) => {
+    const team = box?.[side];
+    if (!team) return;
+
+    // leaders
+    if (team.leaders) {
+      Object.values(team.leaders).forEach((arr) => {
+        if (Array.isArray(arr)) {
+          arr.forEach((p) => {
+            const id =
+              p.id || p.reference || p.sr_id || `${p.first_name}_${p.last_name}`;
+            const name =
+              p.full_name ||
+              `${p.first_name || ""} ${p.last_name || ""}`.trim() ||
+              "Neznámy hráč";
+            const g = p.statistics?.total?.goals ?? 0;
+            const a = p.statistics?.total?.assists ?? 0;
+            players.push({ id, name, goals: g, assists: a });
+          });
+        }
+      });
+    }
+
+    // players
+    if (Array.isArray(team.players)) {
+      team.players.forEach((p) => {
+        const id =
+          p.id || p.reference || p.sr_id || `${p.first_name}_${p.last_name}`;
+        const name =
+          p.full_name ||
+          `${p.first_name || ""} ${p.last_name || ""}`.trim() ||
+          "Neznámy hráč";
+        const g = p.statistics?.total?.goals ?? 0;
+        const a = p.statistics?.total?.assists ?? 0;
+        players.push({ id, name, goals: g, assists: a });
+      });
+    }
+  });
+
+  // Spočítaj góly/asistencie, ak sa hráč opakuje
+  const merged = {};
+  for (const p of players) {
+    if (!merged[p.id])
+      merged[p.id] = { id: p.id, name: p.name, goals: 0, assists: 0 };
+    merged[p.id].goals += p.goals;
+    merged[p.id].assists += p.assists;
+  }
+
+  return Object.values(merged);
+}
+
+// =========================
 export default async function handler(req, res) {
   try {
-    // 1) NHl 2025 REG rozpis
-    const schedUrl = `https://api.sportradar.com/nhl/trial/v7/en/games/2025/REG/schedule.json?api_key=${API_KEY}`;
-    const { data: sched } = await axios.get(schedUrl);
+    // 1️⃣ Základný prehľad zápasov
+    const scheduleUrl = `https://api.sportradar.com/nhl/trial/v7/en/games/2025/REG/schedule.json?api_key=${API_KEY}`;
+    const scheduleResp = await axios.get(scheduleUrl);
+    let matches = scheduleResp.data.games || [];
 
-    let games = Array.isArray(sched?.games) ? sched.games : [];
-
-    // 2) Na ratingy/Mantingal berieme iba uzavreté
-    const completedForStats = games.filter((g) =>
-      ["closed", "complete"].includes(g.status)
+    // len odohrané alebo prebiehajúce
+    matches = matches.filter(
+      (m) =>
+        m.status === "closed" ||
+        m.status === "complete" ||
+        m.status === "inprogress"
     );
 
-    // 3) Dotiahni boxscore len pre odohrané (šetrenie limitov + potrebné štatistiky hráčov)
-    const boxById = new Map();
-    await Promise.all(
-      completedForStats.map(async (g) => {
+    // 2️⃣ Načítaj boxscore pre každý zápas
+    const matchesWithStats = await Promise.all(
+      matches.map(async (m) => {
         try {
-          const url = `https://api.sportradar.com/nhl/trial/v7/en/games/${g.id}/boxscore.json?api_key=${API_KEY}`;
-          const { data } = await axios.get(url);
-          boxById.set(g.id, data);
-        } catch {
-          // necháme bez boxscore
+          const boxUrl = `https://api.sportradar.com/nhl/trial/v7/en/games/${m.id}/boxscore.json?api_key=${API_KEY}`;
+          const det = await axios.get(boxUrl);
+          m.statistics = det.data;
+          return m;
+        } catch (err) {
+          console.warn(`⚠️ Boxscore chyba: ${m.id}`);
+          return m;
         }
       })
     );
 
-    // 4) Premapuj NHL zápasy do „extraliga summary“ tvaru
-    //    - sport_event / sport_event_status / statistics.totals.competitors
-    const mapped = games.map((g) => {
-      const status = nhlStatusToExtraliga(g.status);
-      const box = boxById.get(g.id);
-
-      // vyrob "totals.competitors[].players[]" pre frontend (Extraliga tvar)
-      const totals = { competitors: [] };
-
-      // preferuj box.statistics.teams; fallback na home/away.players
-      const teamBlocks =
-        (box?.statistics?.teams && Array.isArray(box.statistics.teams)
-          ? box.statistics.teams
-          : null) || null;
-
-      if (teamBlocks) {
-        teamBlocks.forEach((t) => {
-          const teamName =
-            (t?.market ? `${t.market} ${t?.name ?? ""}`.trim() : t?.name) ||
-            "Tím";
-          const players = (t.players || []).map((p) => ({
-            id:
-              p.id ||
-              p.player_id ||
-              p.sr_id ||
-              p.reference ||
-              p.full_name ||
-              p.name,
-            name: p.full_name || p.name || "Neznámy hráč",
-            statistics: {
-              goals: p?.statistics?.goals ?? 0,
-              assists: p?.statistics?.assists ?? 0,
-            },
-          }));
-          totals.competitors.push({ name: teamName, players });
-        });
-      } else {
-        // fallback: poskladaj z home/away.players
-        const mkTeam = (sideObj, fallbackName) => {
-          const teamName =
-            (sideObj?.market
-              ? `${sideObj.market} ${sideObj?.name ?? ""}`.trim()
-              : sideObj?.name) || fallbackName;
-          const players = (sideObj?.players || []).map((p) => ({
-            id:
-              p.id ||
-              p.player_id ||
-              p.sr_id ||
-              p.reference ||
-              p.full_name ||
-              p.name,
-            name: p.full_name || p.name || "Neznámy hráč",
-            statistics: {
-              goals: p?.statistics?.goals ?? 0,
-              assists: p?.statistics?.assists ?? 0,
-            },
-          }));
-          return { name: teamName, players };
-        };
-
-        if (box?.home || box?.away) {
-          totals.competitors.push(mkTeam(box?.home, g?.home?.name || "Domáci"));
-          totals.competitors.push(mkTeam(box?.away, g?.away?.name || "Hostia"));
-        }
-      }
-
-      // overtime: skús odvodiť
-      const overtime =
-        Boolean(box?.scoring?.overtime) ||
-        (Array.isArray(box?.scoring?.periods) &&
-          box.scoring.periods.length > 3) ||
-        false;
-
-      return {
-        sport_event: {
-          id: g.id,
-          start_time: g.scheduled,
-          competitors: [
-            { id: g.home?.id, name: g.home?.name },
-            { id: g.away?.id, name: g.away?.name },
-          ],
-        },
-        sport_event_status: {
-          status, // "closed" | "inprogress" | "scheduled"
-          home_score: g.home_points ?? null,
-          away_score: g.away_points ?? null,
-          overtime: overtime || undefined,
-          ap: false,
-        },
-        statistics: { totals }, // presne kde to frontend očakáva
-      };
-    });
-
-    // 5) Zoskupenie podľa dňa -> rounds (rovnaké ako v Extralige)
+    // 3️⃣ Zoskupiť zápasy podľa dátumu
     const grouped = {};
-    mapped.forEach((m) => {
-      const d = toISODate(m.sport_event.start_time);
-      (grouped[d] ||= []).push(m);
+    matchesWithStats.forEach((m) => {
+      const d = new Date(m.scheduled).toISOString().slice(0, 10);
+      if (!grouped[d]) grouped[d] = [];
+      grouped[d].push(m);
     });
-    const daysDesc = Object.keys(grouped).sort(
-      (a, b) => new Date(b) - new Date(a)
-    );
 
-    let roundCounter = daysDesc.length;
-    const rounds = [];
-    for (const d of daysDesc) {
-      grouped[d].forEach((m) => {
-        m.round = roundCounter;
-        m.date = d;
-      });
-      rounds.push({ round: roundCounter, date: d, matches: grouped[d] });
-      roundCounter--;
-    }
+    const days = Object.keys(grouped).sort((a, b) => new Date(b) - new Date(a));
+    const rounds = days.map((day) => ({ date: day, matches: grouped[day] }));
 
-    // 6) Výpočty ratingov + Mantingal (rovnaká logika)
-    const ordered = [...mapped].sort(
-      (a, b) =>
-        new Date(a.sport_event.start_time) - new Date(b.sport_event.start_time)
-    );
-
+    // 4️⃣ Výpočty
+    const ordered = sortByStartTimeAsc(matchesWithStats);
     const teamRatings = {};
-    const playerRatingsById = {};
-    const playerNamesById = {};
-    const martingaleState = new Map();
+    const playerRatings = {};
+    const playerNames = {};
+    const martingale = new Map();
+
     let totalStaked = 0;
     let totalReturn = 0;
 
-    const getMatchPlayers = (m) => {
-      const out = [];
-      const comps = m?.statistics?.totals?.competitors || [];
-      comps.forEach((t) => {
-        (t.players || []).forEach((p) => {
-          if (p?.id) {
-            playerNamesById[p.id] = p.name;
-            out.push(p);
-          }
-        });
-      });
-      return out;
-    };
+    for (const match of ordered) {
+      if (match.status !== "closed" && match.status !== "complete") continue;
 
-    for (const m of ordered) {
-      const st = m?.sport_event_status?.status;
-      if (st !== "closed" && st !== "ap") continue;
+      // 🧩 hráči
+      const players = extractPlayersFromBoxscore(match.statistics);
+      for (const p of players) {
+        playerNames[p.id] = p.name;
+        if (!playerRatings[p.id]) playerRatings[p.id] = START_RATING;
+        playerRatings[p.id] +=
+          p.goals * PLAYER_GOAL_POINTS + p.assists * PLAYER_ASSIST_POINTS;
+      }
 
-      // Top3 pred zápasom
-      const currentTop3 = Object.entries(playerRatingsById)
+      // 🧩 tímy
+      const home = match.home?.name || "Domáci";
+      const away = match.away?.name || "Hostia";
+      const hScore = match.home_points ?? 0;
+      const aScore = match.away_points ?? 0;
+
+      if (!teamRatings[home]) teamRatings[home] = START_RATING;
+      if (!teamRatings[away]) teamRatings[away] = START_RATING;
+
+      teamRatings[home] += hScore * TEAM_GOAL_POINTS - aScore * TEAM_GOAL_POINTS;
+      teamRatings[away] += aScore * TEAM_GOAL_POINTS - hScore * TEAM_GOAL_POINTS;
+
+      if (hScore > aScore) {
+        teamRatings[home] += WIN_POINTS;
+        teamRatings[away] += LOSS_POINTS;
+      } else if (aScore > hScore) {
+        teamRatings[away] += WIN_POINTS;
+        teamRatings[home] += LOSS_POINTS;
+      }
+
+      // 🧩 Mantingal
+      const top3 = Object.entries(playerRatings)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 3)
         .map(([id]) => id);
 
-      const matchPlayers = getMatchPlayers(m);
-      const playersInMatch = new Set(matchPlayers.map((p) => p.id));
+      const playerIds = new Set(players.map((p) => p.id));
 
-      // predzápasové vsádzky
-      currentTop3.forEach((pid) => {
-        if (playersInMatch.has(pid)) {
-          if (!martingaleState.has(pid)) {
-            martingaleState.set(pid, {
-              stake: MANTINGALE_START_STAKE,
-              lastOutcome: null,
-            });
-          }
-          const s = martingaleState.get(pid);
-          totalStaked += s.stake;
+      top3.forEach((pid) => {
+        if (playerIds.has(pid)) {
+          if (!martingale.has(pid))
+            martingale.set(pid, { stake: MANTINGALE_START_STAKE });
+          totalStaked += martingale.get(pid).stake;
         }
       });
 
-      // góly
-      const goalsById = new Map();
-      matchPlayers.forEach((p) => {
-        const g = p?.statistics?.goals ?? 0;
-        if (g > 0) goalsById.set(p.id, g);
-      });
-
-      currentTop3.forEach((pid) => {
-        if (!playersInMatch.has(pid)) return;
-        const s = martingaleState.get(pid);
-        const scored = goalsById.has(pid);
+      top3.forEach((pid) => {
+        if (!playerIds.has(pid)) return;
+        const p = players.find((x) => x.id === pid);
+        const scored = p && p.goals > 0;
+        const s = martingale.get(pid);
         if (scored) {
           totalReturn += s.stake * MANTINGALE_ODDS;
-          martingaleState.set(pid, {
-            stake: MANTINGALE_START_STAKE,
-            lastOutcome: "win",
-          });
+          martingale.set(pid, { stake: MANTINGALE_START_STAKE });
         } else {
-          martingaleState.set(pid, {
-            stake: s.stake * 2,
-            lastOutcome: "loss",
-          });
+          martingale.set(pid, { stake: s.stake * 2 });
         }
-      });
-
-      // tímové ratingy
-      const homeName = m.sport_event.competitors?.[0]?.name || "Domáci";
-      const awayName = m.sport_event.competitors?.[1]?.name || "Hostia";
-      const homeScore = m.sport_event_status.home_score ?? 0;
-      const awayScore = m.sport_event_status.away_score ?? 0;
-
-      if (!teamRatings[homeName]) teamRatings[homeName] = START_RATING;
-      if (!teamRatings[awayName]) teamRatings[awayName] = START_RATING;
-
-      teamRatings[homeName] += homeScore * GOAL_POINTS - awayScore * GOAL_POINTS;
-      teamRatings[awayName] += awayScore * GOAL_POINTS - homeScore * GOAL_POINTS;
-
-      if (homeScore > awayScore) {
-        teamRatings[homeName] += WIN_POINTS;
-        teamRatings[awayName] += LOSS_POINTS;
-      } else if (awayScore > homeScore) {
-        teamRatings[awayName] += WIN_POINTS;
-        teamRatings[homeName] += LOSS_POINTS;
-      }
-
-      // hráči
-      matchPlayers.forEach((p) => {
-        const pid = p.id;
-        const name = p.name;
-        if (!pid) return;
-        playerNamesById[pid] = name;
-        if (playerRatingsById[pid] == null) playerRatingsById[pid] = START_RATING;
-        const g = p?.statistics?.goals ?? 0;
-        const a = p?.statistics?.assists ?? 0;
-        playerRatingsById[pid] += g * PLAYER_GOAL_POINTS + a * PLAYER_ASSIST_POINTS;
       });
     }
 
-    // pre frontend: playerRatings podľa mena
-    const playerRatings = {};
-    Object.entries(playerRatingsById).forEach(([pid, rating]) => {
-      const name = playerNamesById[pid] || pid;
-      playerRatings[name] = rating;
-    });
+    // premena id -> meno
+    const playerRatingsByName = {};
+    for (const [id, rating] of Object.entries(playerRatings)) {
+      const name = playerNames[id] || id;
+      playerRatingsByName[name] = rating;
+    }
 
-    // Mantingal top3 + summary (ako doteraz)
-    const nowTop3Ids = Object.entries(playerRatingsById)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
-      .map(([id]) => id);
-
-    const martingaleTop3 = nowTop3Ids.map((pid) => {
-      const s =
-        martingaleState.get(pid) || {
-          stake: MANTINGALE_START_STAKE,
-          lastOutcome: null,
-        };
-      return {
-        id: pid,
-        name: playerNamesById[pid] || pid,
-        stake: s.stake,
-        lastOutcome: s.lastOutcome,
-        odds: MANTINGALE_ODDS,
-      };
-    });
-
+    // Mantingal sumar
     const martingaleSummary = {
-      totalStaked: Number(totalStaked.toFixed(2)),
-      totalReturn: Number(totalReturn.toFixed(2)),
-      profit: Number((totalReturn - totalStaked).toFixed(2)),
+      totalStaked: totalStaked.toFixed(2),
+      totalReturn: totalReturn.toFixed(2),
+      profit: (totalReturn - totalStaked).toFixed(2),
       odds: MANTINGALE_ODDS,
     };
 
-    // 7) Odpoveď v tvare, ktorý už frontend používa (nič netreba meniť)
-    res.status(200).json({
-      matches: mapped,
+    res.json({
+      matches: matchesWithStats,
       rounds,
       teamRatings,
-      playerRatings,
-      martingale: { top3: martingaleTop3, summary: martingaleSummary },
+      playerRatings: playerRatingsByName,
+      martingale: { summary: martingaleSummary },
     });
   } catch (err) {
-    console.error("Chyba pri načítaní NHL zápasov:", err?.message || err);
-    res.status(500).json({ error: "Chyba pri načítaní zápasov NHL" });
+    console.error("❌ Chyba pri načítaní NHL zápasov:", err.message);
+    res.status(500).json({ error: "Chyba pri načítaní NHL zápasov" });
   }
 }
