@@ -50,7 +50,13 @@ app.get("/matches", async (req, res) => {
         try {
           const boxUrl = `https://api.sportradar.com/nhl/trial/v7/en/games/${m.id}/boxscore.json?api_key=${API_KEY}`;
           const box = await axios.get(boxUrl);
-          m.statistics = box.data; // zachovávame pôvodnú štruktúru home/away
+
+// 🔧 Oprava: normalizuj štruktúru, aby frontend našiel hráčov
+const boxData = box.data || {};
+m.statistics = {
+  home: boxData.home || boxData.statistics?.home || {},
+  away: boxData.away || boxData.statistics?.away || {},
+};
           return m;
         } catch {
           return m;
