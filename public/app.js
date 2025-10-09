@@ -329,11 +329,20 @@ function displayMantingal() {
     }
 
     // 4) až POTOM aktualizuj priebežné ratingy hráčov podľa výkonu v tomto zápase
-    for (const p of plist) {
-      const name = p.name;
-      initR(name);
-      ratingSoFar[name] += (p.goals || 0) * GOAL_W + (p.assists || 0) * ASSIST_W;
-    }
+    // agreguj výkony hráčov bez duplicít
+const uniquePlayers = {};
+for (const p of plist) {
+  if (!p.name) continue;
+  if (!uniquePlayers[p.name]) uniquePlayers[p.name] = { goals: 0, assists: 0 };
+  uniquePlayers[p.name].goals += p.goals || 0;
+  uniquePlayers[p.name].assists += p.assists || 0;
+}
+
+// aktualizuj ratingy
+for (const [name, stats] of Object.entries(uniquePlayers)) {
+  initR(name);
+  ratingSoFar[name] += stats.goals * GOAL_W + stats.assists * ASSIST_W;
+}
   }
 
   // aktuálna TOP3 podľa globálneho (už vypočítaného) playerRatings v appke
